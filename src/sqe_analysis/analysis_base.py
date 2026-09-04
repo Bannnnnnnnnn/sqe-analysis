@@ -73,9 +73,12 @@ class CurvefitAnalysis(BaseAnalysis):
 
     A subclass should implement the model function by overriding
     :py:meth:`func`. The :py:meth:`run` method has a default implementation that
-    performs fitting to ``func`` using ``xr.DataArray.curvefit``. Additionally,
-    a subclass may implement a :py:meth:`guess` function that produces an
-    initial guess, which will be called by ``run``.
+    performs fitting to ``func`` using ``xr.DataArray.curvefit`` and returns a
+    :py:class:`~sqe_analysis.result.CurvefitAnalysisResult`. Additionally, a
+    subclass may implement two functions that will be called by ``run``:
+    :py:meth:`guess`, which produces an initial guess, and
+    :py:meth:`preprocess`, which can apply simple transformations to the data
+    before fitting.
 
     This class should only be used for the cases where the analysis truly
     consists of a single curve fit. If you need to perform multiple curve fits
@@ -88,8 +91,6 @@ class CurvefitAnalysis(BaseAnalysis):
     Note that all methods are class methods, so they cannot depend on any
     internal state.
     """
-
-    # TODO: document preprocessing...
 
     # TODO: doc link to xarray curvefit
 
@@ -130,8 +131,22 @@ class CurvefitAnalysis(BaseAnalysis):
         data: xr.DataArray,
         coords: CurvefitCoordsType,
     ) -> xr.DataArray | None:
-        # TODO: docstrirng
-        # ... should return a data array that is suitable for fitting to the model ...
+        """
+        Apply simple preprocessing to the data before fitting or generating an
+        initial guess.
+
+        The preprocessing should be simple enough that it does **not** affect
+        the main quantities of interest. A common preprocessing step is
+        :py:func:`~sqe_analysis.signal_processing.project_complex`.
+
+        The result of this function will be stored in
+        ``.intermediate_results.preprocessed_data`` of the fit result object.
+
+        Returns ``None`` if no preprocessing is to be performed.
+        """
+        # TODO: add more explicit concrete examples of what kinds of
+        # transformations are acceptable and which are not, once we have more
+        # concrete examples of fitting
         return None
 
     @classmethod
