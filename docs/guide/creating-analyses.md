@@ -239,6 +239,7 @@ class LineFitWithGuess(LineFit):
 
 **TODO**
 
+(multi-step-analysis)=
 ## Multi-step analysis
 
 In this example, we will create an analysis class that combines several analyses.

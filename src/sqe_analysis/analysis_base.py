@@ -82,8 +82,8 @@ class CurvefitAnalysis(BaseAnalysis):
     (for example, fitting an oscillation frequency as a function of some
     parameter, and then fitting a curve to the extracted oscillation
     frequencies), you should use :py:class:`BaseAnalysis` instead, and use
-    ``CurvefitAnalysis`` subclasses in the ``run`` implementation. See *TODO* for
-    an example.
+    ``CurvefitAnalysis`` subclasses in the ``run`` implementation. See :ref:`the
+    tutorial <multi-step-analysis>` for an example.
 
     Note that all methods are class methods, so they cannot depend on any
     internal state.
