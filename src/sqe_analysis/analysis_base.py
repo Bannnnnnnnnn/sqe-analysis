@@ -263,14 +263,13 @@ class CurvefitAnalysis(BaseAnalysis):
         Additional quantities of intereset derived from the fit results that are
         not parameters of the model function.
 
-        Return None for no additional quantities.
-
         Args:
-            fit_params: The result of the curve fitting. It should be a Dataset
-                with keys for each fit parameter
+            fit_params: The result of the curve fitting. It is a Dataset with
+                a data variable for each fit parameter
 
         Returns:
             An Xarray Dataset with data variables for each of the additional
-            derived quantities, or None if there are no derived quantities.
+            derived quantities, or ``None`` if there are no derived quantities.
         """
+        # TODO: link to xarray dataset docs
         return None
