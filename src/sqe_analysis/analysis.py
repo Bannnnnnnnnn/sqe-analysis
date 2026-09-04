@@ -157,7 +157,6 @@ class ExponentialRegressionAnalysis(BaseAnalysis):
 
         return CurvefitAnalysisResult(
             params=fit_params.assign(
-                # TODO: add SNR
                 decay_constant=1 / fit_params.k,
                 SNR=snr,
             ),
