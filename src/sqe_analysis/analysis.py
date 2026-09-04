@@ -47,12 +47,16 @@ class ExponentialRegressionAnalysis(BaseAnalysis):
 
     Note that the parameter names are different from those used by Jacquelin.
 
-    This method has the advantage that it is extremely fast and requires no initial
-    guess. The downside is that it does not provide error bounds for the
+    This method has the advantage that it is extremely fast and requires no
+    initial guess. The downside is that it does not provide error bounds for the
     parameters. It can be used as an initial guess for curve fitting.
+
+    This method also works for data that lies along a line in the complex plane,
+    with complex-valued :math:`a` and :math:`b`. In this case, the decay
+    parameter :math:`k` may also have a small imaginary component.
     """
 
-    # TODO: example showing that it also works for complex-valued data
+    # TODO: example (with plot) showing that it also works for complex-valued data
 
     @classmethod
     @override
