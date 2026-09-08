@@ -4,7 +4,8 @@ The main API of the library
 The analysis classes are ordered alphabetically, for lack of better organization.
 """
 
-from typing import cast, override
+from typing import cast
+from typing_extensions import override
 
 import numpy as np
 import xarray as xr

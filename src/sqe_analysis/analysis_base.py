@@ -7,7 +7,9 @@ For concrete classes implementing the analysis, see the
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
-from typing import Any, cast, override
+from typing import Any, cast
+from typing_extensions import override
+
 
 import xarray as xr
 
