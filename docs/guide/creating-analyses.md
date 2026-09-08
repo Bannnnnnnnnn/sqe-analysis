@@ -74,10 +74,12 @@ class SimplePeakLocationAnalysis(BaseAnalysis):
             analysis_class=cls,
 
             # The result object should also know which dataset it came from.
-            # Here, we have not defined a 'dataset_id' for our example data,
-            # so we will get a warning from the get_source_dataset_id helper
-            # function. For real experimental data, the experiment framework
-            # should attach a unique ID to the data for reproducibility.
+            # The get_source_dataset_id helper function looks for 'dataset_id'
+            # in the .attrs of the data array, and issues a warning if it is not
+            # found. We will get this warning for our example data, because we
+            # have not defined the dataset ID. For real experimental data, the
+            # experiment framework should attach a unique ID to the data for
+            # reproducibility.
             source_dataset_id=get_source_dataset_id(data),
         )
 ```
