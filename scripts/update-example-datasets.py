@@ -15,11 +15,17 @@ from sqe_analysis.example_data import get_dataset_names, open_dataset
 
 
 def save_updated(ds: xr.Dataset, ds_name: str):
-    ds_path = Path("../src/sqe_analysis/example_data") / Path(
-        ds_name + "-update"
-    ).with_suffix(".nc")
+    # note: requires that the dataset is loaded like this:
+    # with open_dataset(ds_name) as ds:
+    #     ds = ds.load()
+    # this way, the file handle is not kept open and we can overwrite the file
 
-    assert not ds_path.exists(), str(ds_path)
+    data_folder = Path("../src/sqe_analysis/example_data")
+    ds_path = data_folder / Path(ds_name).with_suffix(".nc")
+
+    #assert not ds_path.exists(), str(ds_path)
+    if ds_path.exists():
+        print(f"overwriting {ds_path}")
 
     print(f"Saving to {ds_path}")
     ds.to_netcdf(ds_path, engine="h5netcdf")
