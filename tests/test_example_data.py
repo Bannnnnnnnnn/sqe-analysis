@@ -13,5 +13,12 @@ def test_open_dataset_unknown_name():
 
 
 def test_all_metadata_valid():
+    invalid = []
     for ds_name in get_dataset_names():
-        validate_metadata(open_dataset(ds_name))
+        try:
+            validate_metadata(open_dataset(ds_name))
+        except ValueError as e:
+            invalid.append((ds_name, e))
+
+    if invalid:
+        raise ValueError(f"Errors validating metadata:\n" + "\n".join(f"{ds_name}: {e}" for ds_name, e in invalid))
