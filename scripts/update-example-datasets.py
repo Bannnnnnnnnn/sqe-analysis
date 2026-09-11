@@ -107,4 +107,39 @@ display(ds.pipe(project_complex).hvplot(x="idle_time"))
 # fix typo
 del ds.attrs["qualiy_notes"]
 
-ds.pipe(save_updated, ds_name)
+#ds.pipe(save_updated, ds_name)
+
+# %% [markdown]
+# ## Add missing author information
+
+# %%
+for ds_name in get_dataset_names():
+    with open_dataset(ds_name) as ds:
+        ds = ds.load()
+    
+    if ds_name.startswith("ac_stark_shift_vs_resonator"):
+        author = "Adrian Hesse / RIKEN"
+    else:
+        author = "András Márton Gunyhó / RIKEN"
+
+    ds = ds.assign_attrs(author=author)
+
+    #save_updated(ds, ds_name)
+
+# %% [markdown]
+# ## Compare two versions of a data file for differences in attributes
+#
+# The previous version is checked out from git like
+# ```shell
+# git show version:./filename.nc > filename-prev.nc
+# ```
+# where `version` is the git hash
+
+# %%
+from xarray.testing import assert_equal, assert_identical
+
+# %%
+assert_identical(
+    open_dataset("t1-good_snr-RX4_QD20260730016"),
+    open_dataset("t1-good_snr-RX4_QD20260730016-prev"),
+)
