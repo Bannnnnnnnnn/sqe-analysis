@@ -15,11 +15,17 @@ from sqe_analysis.example_data import get_dataset_names, open_dataset
 
 
 def save_updated(ds: xr.Dataset, ds_name: str):
-    ds_path = Path("../src/sqe_analysis/example_data") / Path(
-        ds_name + "-update"
-    ).with_suffix(".nc")
+    # note: requires that the dataset is loaded like this:
+    # with open_dataset(ds_name) as ds:
+    #     ds = ds.load()
+    # this way, the file handle is not kept open and we can overwrite the file
 
-    assert not ds_path.exists(), str(ds_path)
+    data_folder = Path("../src/sqe_analysis/example_data")
+    ds_path = data_folder / Path(ds_name).with_suffix(".nc")
+
+    #assert not ds_path.exists(), str(ds_path)
+    if ds_path.exists():
+        print(f"overwriting {ds_path}")
 
     print(f"Saving to {ds_path}")
     ds.to_netcdf(ds_path, engine="h5netcdf")
@@ -107,4 +113,39 @@ display(ds.pipe(project_complex).hvplot(x="idle_time"))
 # fix typo
 del ds.attrs["qualiy_notes"]
 
-ds.pipe(save_updated, ds_name)
+#ds.pipe(save_updated, ds_name)
+
+# %% [markdown]
+# ## Add missing author information
+
+# %%
+for ds_name in get_dataset_names():
+    with open_dataset(ds_name) as ds:
+        ds = ds.load()
+    
+    if ds_name.startswith("ac_stark_shift_vs_resonator"):
+        author = "Adrian Hesse / RIKEN"
+    else:
+        author = "András Márton Gunyhó / RIKEN"
+
+    ds = ds.assign_attrs(author=author)
+
+    #save_updated(ds, ds_name)
+
+# %% [markdown]
+# ## Compare two versions of a data file for differences in attributes
+#
+# The previous version is checked out from git like
+# ```shell
+# git show version:./filename.nc > filename-prev.nc
+# ```
+# where `version` is the git hash
+
+# %%
+from xarray.testing import assert_equal, assert_identical
+
+# %%
+assert_identical(
+    open_dataset("t1-good_snr-RX4_QD20260730016"),
+    open_dataset("t1-good_snr-RX4_QD20260730016-prev"),
+)

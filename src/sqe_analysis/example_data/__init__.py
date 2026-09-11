@@ -53,6 +53,9 @@ dataset. Each dataset should have the following NetCDF metadata:
 - ``license``: string
     - A license identifier such as "CC BY-SA 4.0"
 
+- ``author``: string
+    - The name and institute of the person who performed the measurements or numerical simulations, e.g. "A. Author / Institute"
+
 The fields in the metadata are required unless marked as optional.
 
 The file names should match the following pattern:
@@ -134,6 +137,7 @@ def validate_metadata(ds: xr.Dataset) -> None:
         "source",
         "source_type",
         "license",
+        "author",
     ]
     valid_keys = required_keys + ["expected_fit_result"]
 
