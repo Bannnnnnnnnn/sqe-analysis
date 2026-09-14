@@ -56,3 +56,36 @@ def test_damped_oscillation_analysis_basic(time_unit, time_scale, automatic_f):
         atol=1e-8,
     )
     assert_identical(data, original_data)
+
+
+def test_damped_oscillation_analysis_nonuniform_time_with_manual_guess():
+    """Fit nonuniformly sampled data using explicitly supplied guesses."""
+    time = np.linspace(0, 40e-6, 401)
+    time[1::2] += 20e-9
+
+    data = xr.DataArray(
+        0.2 + 0.8 * np.exp(-time / 12e-6) * np.cos(2 * np.pi * 400e3 * time + 0.4),
+        coords=[("time", time)],
+        attrs={"dataset_id": "test"},
+    )
+    data.time.attrs["units"] = "s"
+    original_data = data.copy(deep=True)
+
+    assert DampedOscillationAnalysis.guess(data, coords="time") is None
+
+    result = DampedOscillationAnalysis.run(
+        data,
+        coords="time",
+        guess={"a": 0.7, "b": 0.1, "tau": 10e-6, "f": 404e3, "phi": 0.3},
+    )
+
+    assert result.success.all()
+    assert result.params.tau.item() == pytest.approx(12e-6, rel=1e-6, abs=0)
+    assert result.params.f.item() == pytest.approx(400e3)
+    assert_allclose(
+        DampedOscillationAnalysis.func(data.time, **result.fit_params),
+        data,
+        rtol=1e-6,
+        atol=1e-8,
+    )
+    assert_identical(data, original_data)
