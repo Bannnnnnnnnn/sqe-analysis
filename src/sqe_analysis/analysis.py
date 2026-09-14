@@ -26,6 +26,80 @@ from sqe_analysis.signal_processing import project_complex
 from sqe_analysis.xarray_util import longest_dim
 
 
+class DampedOscillationAnalysis(CurvefitAnalysis):
+    r"""
+    Curve fit for exponentially damped oscillations
+
+    Fits the model
+
+    .. math::
+
+        b + a \cdot \exp(-x / \tau) \cdot \cos(2\pi f x + \phi)
+
+    to real-valued data. For supported inputs, :py:meth:`guess` estimates the
+    initial frequency. Supply the other initial parameter values using the
+    ``guess`` argument of :py:meth:`run`.
+
+    The decay time ``tau`` has the same units as ``x``, and the frequency ``f``
+    has the inverse units of ``x``. The phase ``phi`` is in radians.
+    """
+
+    @classmethod
+    @override
+    def func(cls, x: ArrayLike, a, b, tau, f, phi) -> ArrayLike:
+        return b + a * np.exp(-x / tau) * np.cos(2 * np.pi * f * x + phi)
+
+    @classmethod
+    @override
+    def guess(
+        cls,
+        preprocessed_data: xr.DataArray,
+        coords: CurvefitCoordsType,
+    ) -> CurvefitGuessType | None:
+        """
+        Crude initial guess for the oscillation frequency
+
+        Supports one-dimensional real data with finite values and a named,
+        increasing, uniformly spaced numeric coordinate.
+
+        Returns None if no frequency guess can be generated.
+        """
+        y = preprocessed_data
+        if not isinstance(coords, str) or y.ndim != 1:
+            return None
+
+        x = y[coords]
+        if x.dims != y.dims or x.size < 3:
+            return None
+
+        if (
+            not np.issubdtype(x.dtype, np.number)
+            or not np.issubdtype(y.dtype, np.number)
+            or np.iscomplexobj(x)
+            or np.iscomplexobj(y)
+        ):
+            return None
+
+        time = x.to_numpy().astype(float)
+        values = y.to_numpy().astype(float)
+        if not np.isfinite(time).all() or not np.isfinite(values).all():
+            return None
+
+        steps = np.diff(time)
+        if steps[0] <= 0 or not np.allclose(steps, steps[0], rtol=1e-6, atol=0):
+            return None
+
+        if np.all(values == values[0]):
+            return None
+
+        centered = values - values.mean()
+        amplitudes = np.abs(np.fft.rfft(centered))
+        frequencies = np.fft.rfftfreq(time.size, d=steps[0])
+        peak_index = np.argmax(amplitudes[1:]) + 1
+
+        return {"f": float(frequencies[peak_index])}
+
+
 class ExponentialRegressionAnalysis(BaseAnalysis):
     r"""
     Analysis for exponentially decaying data with non-zero baseline
