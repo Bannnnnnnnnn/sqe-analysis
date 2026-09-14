@@ -37,8 +37,8 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         b + a \cdot \exp(-x / \tau) \cdot \cos(2\pi f x + \phi)
 
     to real-valued data. For supported inputs, :py:meth:`guess` estimates the
-    initial frequency. Supply the other initial parameter values using the
-    ``guess`` argument of :py:meth:`run`.
+    initial amplitude, offset, and frequency. Supply initial values for ``tau``
+    and ``phi`` using the ``guess`` argument of :py:meth:`run`.
 
     The decay time ``tau`` has the same units as ``x``, and the frequency ``f``
     has the inverse units of ``x``. The phase ``phi`` is in radians.
@@ -57,12 +57,12 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         coords: CurvefitCoordsType,
     ) -> CurvefitGuessType | None:
         """
-        Crude initial guess for the oscillation frequency
+        Crude initial guesses for amplitude, offset, and frequency
 
         Supports one-dimensional real data with finite values and a named,
         increasing, uniformly spaced numeric coordinate.
 
-        Returns None if no frequency guess can be generated.
+        Returns None if no initial guesses can be generated.
         """
         y = preprocessed_data
         if not isinstance(coords, str) or y.ndim != 1:
@@ -93,11 +93,19 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             return None
 
         centered = values - values.mean()
+        amplitude = (values.max() - values.min()) / 2
+        baseline = values.mean()
+
+        centered = values - baseline
         amplitudes = np.abs(np.fft.rfft(centered))
         frequencies = np.fft.rfftfreq(time.size, d=steps[0])
         peak_index = np.argmax(amplitudes[1:]) + 1
 
-        return {"f": float(frequencies[peak_index])}
+        return {
+            "a": float(amplitude),
+            "b": float(baseline),
+            "f": float(frequencies[peak_index]),
+        }
 
 
 class ExponentialRegressionAnalysis(BaseAnalysis):

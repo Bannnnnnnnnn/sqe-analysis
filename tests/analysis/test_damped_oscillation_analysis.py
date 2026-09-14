@@ -89,3 +89,53 @@ def test_damped_oscillation_analysis_nonuniform_time_with_manual_guess():
         atol=1e-8,
     )
     assert_identical(data, original_data)
+
+
+@pytest.mark.parametrize("manual_ab", [False, True])
+@pytest.mark.parametrize("time_unit, time_scale", [("s", 1.0), ("us", 1e6)])
+def test_damped_oscillation_analysis_amplitude_offset_guess(
+    time_unit, time_scale, manual_ab
+):
+    """Recover parameters with automatic or overridden amplitude and offset."""
+    time = np.linspace(0, 40e-6, 401) * time_scale
+    tau = 12e-6 * time_scale
+    f = 0.4e6 / time_scale
+
+    data = xr.DataArray(
+        0.2 + 0.8 * np.exp(-time / tau) * np.cos(2 * np.pi * f * time + 0.4),
+        coords=[("time", time)],
+        attrs={"dataset_id": "test"},
+    )
+    data.time.attrs["units"] = time_unit
+    original_data = data.copy(deep=True)
+
+    guess = {"tau": tau * 0.8, "phi": 0.3}
+    if manual_ab:
+        guess.update({"a": 0.7, "b": 0.1})
+
+    result = DampedOscillationAnalysis.run(
+        data,
+        coords="time",
+        guess=guess,
+    )
+
+    assert set(result.fit_params_guess.data_vars) == {"a", "b", "tau", "f", "phi"}
+
+    if manual_ab:
+        assert result.fit_params_guess.a.item() == pytest.approx(0.7)
+        assert result.fit_params_guess.b.item() == pytest.approx(0.1)
+
+    assert result.success.all()
+    assert result.params.a.item() == pytest.approx(0.8)
+    assert result.params.b.item() == pytest.approx(0.2)
+    assert result.params.tau.item() == pytest.approx(tau, rel=1e-6, abs=0)
+    assert result.params.f.item() == pytest.approx(f)
+    assert result.params.phi.item() == pytest.approx(0.4)
+
+    assert_allclose(
+        DampedOscillationAnalysis.func(data.time, **result.fit_params),
+        data,
+        rtol=1e-6,
+        atol=1e-8,
+    )
+    assert_identical(data, original_data)
