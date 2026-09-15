@@ -67,22 +67,27 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         """
         Crude initial guesses for damped oscillation parameters
 
-        Supports one-dimensional real data with finite values and a named,
-        increasing, uniformly spaced numeric coordinate.
+        Supports real data along a named, one-dimensional, increasing,
+        uniformly spaced numeric coordinate. Each trace must contain
+        finite, nonconstant values.
 
-        The frequency is estimated using the FFT. The initial decay time
-        is half the coordinate span. Amplitude, offset, and phase are
-        estimated by linear least squares at that frequency and decay time.
+        The frequency is estimated using the FFT for each trace. The
+        initial decay time is half the coordinate span. Amplitude, offset,
+        and phase are estimated by linear least squares at that frequency
+        and decay time.
 
-        Returns None if no initial guesses can be generated.
+        Returns None for the entire input if the coordinate is unsupported
+        or any trace contains nonfinite values or is constant.
         """
         y = preprocessed_data
-        if not isinstance(coords, str) or y.ndim != 1:
+        if not isinstance(coords, str):
             return None
 
         x = y[coords]
-        if x.dims != y.dims or x.size < 3:
+        if x.ndim != 1 or x.size < 3:
             return None
+
+        dim = x.dims[0]
 
         if (
             not np.issubdtype(x.dtype, np.number)
@@ -93,44 +98,60 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             return None
 
         time = x.to_numpy().astype(float)
-        values = y.to_numpy().astype(float)
-        if not np.isfinite(time).all() or not np.isfinite(values).all():
+        if not np.isfinite(time).all() or not np.isfinite(y).all():
             return None
 
         steps = np.diff(time)
         if steps[0] <= 0 or not np.allclose(steps, steps[0], rtol=1e-6, atol=0):
             return None
 
-        if np.all(values == values[0]):
+        if (y.max(dim=dim) == y.min(dim=dim)).any():
             return None
 
-        centered = values - values.mean()
-        amplitudes = np.abs(np.fft.rfft(centered))
+        # All traces share the same coordinate and provisional decay time.
+        tau = float((time[-1] - time[0]) / 2)
         frequencies = np.fft.rfftfreq(time.size, d=steps[0])
-        peak_index = np.argmax(amplitudes[1:]) + 1
-        frequency = float(frequencies[peak_index])
-
-        # Use the observation span to set a provisional decay time.
-        tau = (time[-1] - time[0]) / 2
-
         envelope = np.exp(-time / tau)
-        angle = 2 * np.pi * frequency * time
 
-        design = np.column_stack(
-            (
-                envelope * np.cos(angle),
-                envelope * np.sin(angle),
-                np.ones_like(time),
+        def guess_trace(values):
+            values = np.asarray(values, dtype=float)
+            centered = values - values.mean()
+            amplitudes = np.abs(np.fft.rfft(centered))
+            peak_index = np.argmax(amplitudes[1:]) + 1
+            frequency = float(frequencies[peak_index])
+
+            angle = 2 * np.pi * frequency * time
+            design = np.column_stack(
+                (
+                    envelope * np.cos(angle),
+                    envelope * np.sin(angle),
+                    np.ones_like(time),
+                )
             )
+            cosine, sine, baseline = np.linalg.lstsq(design, values, rcond=None)[0]
+
+            return (
+                float(np.hypot(cosine, sine)),
+                float(baseline),
+                frequency,
+                float(np.arctan2(-sine, cosine)),
+            )
+
+        amplitude, baseline, frequency, phase = xr.apply_ufunc(
+            guess_trace,
+            y,
+            input_core_dims=[[dim]],
+            output_core_dims=[[], [], [], []],
+            vectorize=True,
+            output_dtypes=[float, float, float, float],
         )
-        cosine, sine, baseline = np.linalg.lstsq(design, values, rcond=None)[0]
 
         return {
-            "a": float(np.hypot(cosine, sine)),
-            "b": float(baseline),
-            "tau": float(tau),
+            "a": amplitude,
+            "b": baseline,
+            "tau": tau,
             "f": frequency,
-            "phi": float(np.arctan2(-sine, cosine)),
+            "phi": phase,
         }
 
     @classmethod
