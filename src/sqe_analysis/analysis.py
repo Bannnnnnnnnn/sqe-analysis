@@ -203,13 +203,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             scipy_kwargs.setdefault("x_scale", "jac")
         options["kwargs"] = scipy_kwargs
 
-        result = super().run(
-            data,
-            coords=coords,
-            guess=guess,
-            curvefit_kwargs=options,
-        )
-
+        constant = None
         if isinstance(coords, str):
             coordinate = data[coords]
             if coordinate.ndim == 1 and coordinate.size > 0:
@@ -217,9 +211,37 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
                 first = data.isel({dim: 0}, drop=True)
                 constant = (data == first).all(dim)
 
-                result.success = result.success & ~constant
-                result.params = result.params.where(~constant)
-                result.fit_params = result.fit_params.where(~constant)
+        prepared_guess = {} if guess is None else dict(guess)
+
+        if constant is not None and constant.any():
+            preprocessed = cls.preprocess(data, coords=coords)
+            data_to_guess = data if preprocessed is None else preprocessed
+            automatic_guess = cls.guess(data_to_guess, coords=coords)
+
+            if automatic_guess is not None:
+                for name, (lower, upper) in bounds.items():
+                    if name in prepared_guess or name not in automatic_guess:
+                        continue
+
+                    initial = automatic_guess[name]
+                    bounded = np.minimum(np.maximum(initial, lower), upper)
+                    prepared_guess[name] = xr.where(
+                        constant,
+                        bounded,
+                        initial,
+                    )
+
+        result = super().run(
+            data,
+            coords=coords,
+            guess=prepared_guess,
+            curvefit_kwargs=options,
+        )
+
+        if constant is not None:
+            result.success = result.success & ~constant
+            result.params = result.params.where(~constant)
+            result.fit_params = result.fit_params.where(~constant)
 
         return result
 
