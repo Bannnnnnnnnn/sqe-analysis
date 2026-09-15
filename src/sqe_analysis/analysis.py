@@ -67,17 +67,19 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         """
         Crude initial guesses for damped oscillation parameters
 
-        Supports real data along a named, one-dimensional, increasing,
-        uniformly spaced numeric coordinate. Each trace must contain
-        finite, nonconstant values.
+        Supports real data with finite values and a named, one-dimensional,
+        increasing, uniformly spaced numeric coordinate.
 
-        The frequency is estimated using the FFT for each trace. The
-        initial decay time is half the coordinate span. Amplitude, offset,
-        and phase are estimated by linear least squares at that frequency
-        and decay time.
+        For nonconstant traces, frequency is estimated using the FFT.
+        The initial decay time is half the coordinate span. Amplitude,
+        offset, and phase are estimated by linear least squares.
 
-        Returns None for the entire input if the coordinate is unsupported
-        or any trace contains nonfinite values or is constant.
+        Constant traces use zero amplitude and their constant value as
+        the baseline. Their remaining initial values are numerical
+        placeholders. The run method marks these traces as unsuccessful.
+
+        Returns None if the coordinate is unsupported or any trace
+        contains nonfinite values.
         """
         y = preprocessed_data
         if not isinstance(coords, str):
@@ -105,9 +107,6 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         if steps[0] <= 0 or not np.allclose(steps, steps[0], rtol=1e-6, atol=0):
             return None
 
-        if (y.max(dim=dim) == y.min(dim=dim)).any():
-            return None
-
         # All traces share the same coordinate and provisional decay time.
         tau = float((time[-1] - time[0]) / 2)
         frequencies = np.fft.rfftfreq(time.size, d=steps[0])
@@ -115,6 +114,12 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         def guess_trace(values):
             values = np.asarray(values, dtype=float)
+
+            if np.all(values == values[0]):
+                # Represent a constant with zero amplitude.
+                # Frequency and phase are numerical placeholders.
+                return 0.0, float(values[0]), float(frequencies[1]), 0.0
+
             centered = values - values.mean()
             amplitudes = np.abs(np.fft.rfft(centered))
             peak_index = np.argmax(amplitudes[1:]) + 1
@@ -172,6 +177,10 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         The default optimization method is ``trf``. For ``trf`` and
         ``dogbox``, parameter scaling defaults to ``x_scale="jac"``.
 
+        For a named one-dimensional coordinate, constant input traces are
+        marked as unsuccessful. Their entries in ``params`` and
+        ``fit_params`` are replaced by NaN.
+
         Args:
             data: Data to analyze.
             coords: Coordinate(s) along which to perform curve fitting.
@@ -194,12 +203,25 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             scipy_kwargs.setdefault("x_scale", "jac")
         options["kwargs"] = scipy_kwargs
 
-        return super().run(
+        result = super().run(
             data,
             coords=coords,
             guess=guess,
             curvefit_kwargs=options,
         )
+
+        if isinstance(coords, str):
+            coordinate = data[coords]
+            if coordinate.ndim == 1 and coordinate.size > 0:
+                dim = coordinate.dims[0]
+                first = data.isel({dim: 0}, drop=True)
+                constant = (data == first).all(dim)
+
+                result.success = result.success & ~constant
+                result.params = result.params.where(~constant)
+                result.fit_params = result.fit_params.where(~constant)
+
+        return result
 
     @classmethod
     @override
