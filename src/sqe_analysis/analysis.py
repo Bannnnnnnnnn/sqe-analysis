@@ -4,7 +4,7 @@ The main API of the library
 The analysis classes are ordered alphabetically, for lack of better organization.
 """
 
-from typing import cast, override
+from typing import Any, cast, override
 
 import numpy as np
 import xarray as xr
@@ -124,6 +124,53 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             "f": frequency,
             "phi": float(np.arctan2(-sine, cosine)),
         }
+
+    @classmethod
+    @override
+    def run(
+        cls,
+        data: xr.DataArray,
+        coords: CurvefitCoordsType,
+        guess: CurvefitGuessType | None = None,
+        curvefit_kwargs: dict[str, Any] | None = None,
+    ) -> CurvefitAnalysisResult:
+        """
+        Fit damped oscillations with default decay-time bounds.
+
+        The default bounds for ``tau`` are ``(0, np.inf)``.
+        Explicitly supplied bounds override this default.
+
+        The default optimization method is ``trf``. For ``trf`` and
+        ``dogbox``, parameter scaling defaults to ``x_scale="jac"``.
+
+        Args:
+            data: Data to analyze.
+            coords: Coordinate(s) along which to perform curve fitting.
+            guess: Initial parameter values overriding automatic guesses.
+            curvefit_kwargs: Keyword arguments passed to Xarray curvefit.
+
+        Returns:
+            The curve-fitting analysis result.
+        """
+        options = {} if curvefit_kwargs is None else dict(curvefit_kwargs)
+
+        bounds = dict(options.get("bounds") or {})
+        bounds.setdefault("tau", (0, np.inf))
+        options["bounds"] = bounds
+
+        scipy_kwargs = dict(options.get("kwargs") or {})
+        if scipy_kwargs.get("method") is None:
+            scipy_kwargs["method"] = "trf"
+        if scipy_kwargs["method"] in ("trf", "dogbox"):
+            scipy_kwargs.setdefault("x_scale", "jac")
+        options["kwargs"] = scipy_kwargs
+
+        return super().run(
+            data,
+            coords=coords,
+            guess=guess,
+            curvefit_kwargs=options,
+        )
 
 
 class ExponentialRegressionAnalysis(BaseAnalysis):

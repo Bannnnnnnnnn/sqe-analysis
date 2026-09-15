@@ -184,3 +184,74 @@ def test_damped_oscillation_analysis_without_guess(time_unit, time_scale):
         "f",
         "phi",
     }
+
+
+@pytest.mark.parametrize(
+    "time_unit, time_scale",
+    [("s", 1.0), ("us", 1e6), ("ns", 1e9)],
+)
+def test_damped_oscillation_analysis_positive_tau_bounds(time_unit, time_scale):
+    """Recover a bounded fit and reject an out-of-bounds initial decay time."""
+    time_s = np.linspace(0, 40e-6, 401)
+
+    data = xr.DataArray(
+        0.2 + 0.8 * np.exp(-time_s / 12e-6) * np.cos(2 * np.pi * 400e3 * time_s + 0.4),
+        coords=[("idle_time", time_s * time_scale)],
+        attrs={"dataset_id": "test"},
+    )
+    data.idle_time.attrs["units"] = time_unit
+
+    curvefit_kwargs = {
+        "bounds": {"tau": (0, np.inf)},
+        "kwargs": {"x_scale": "jac"},
+    }
+
+    result = DampedOscillationAnalysis.run(
+        data,
+        coords="idle_time",
+        curvefit_kwargs=curvefit_kwargs,
+    )
+
+    assert result.success.all()
+
+    tau_s = result.params.tau.item() / time_scale
+    frequency_hz = result.params.f.item() * time_scale
+
+    assert np.isfinite(tau_s)
+    assert tau_s > 0
+    assert tau_s == pytest.approx(12e-6, rel=1e-5, abs=0)
+    assert frequency_hz == pytest.approx(400e3, rel=1e-5, abs=0)
+
+    assert_allclose(
+        DampedOscillationAnalysis.func(data.idle_time, **result.fit_params),
+        data,
+        rtol=1e-5,
+        atol=1e-7,
+    )
+
+    with pytest.raises(ValueError, match="bounds"):
+        DampedOscillationAnalysis.run(
+            data,
+            coords="idle_time",
+            guess={"tau": -12e-6 * time_scale},
+            curvefit_kwargs=curvefit_kwargs,
+        )
+
+
+def test_damped_oscillation_analysis_rejects_negative_tau_guess():
+    """Reject a negative initial decay time without explicit bounds."""
+    time = np.linspace(0, 40, 401)
+
+    data = xr.DataArray(
+        0.2 + 0.8 * np.exp(-time / 12) * np.cos(2 * np.pi * 0.4 * time + 0.4),
+        coords=[("idle_time", time)],
+        attrs={"dataset_id": "test"},
+    )
+    data.idle_time.attrs["units"] = "us"
+
+    with pytest.raises(ValueError):
+        DampedOscillationAnalysis.run(
+            data,
+            coords="idle_time",
+            guess={"tau": -12.0},
+        )
