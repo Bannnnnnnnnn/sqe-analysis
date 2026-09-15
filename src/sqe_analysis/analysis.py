@@ -199,6 +199,10 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         A named one-dimensional coordinate must contain only finite
         values, even when ``skipna=True`` is supplied.
 
+        Named one-dimensional coordinates containing duplicate or
+        decreasing times require explicit initial values for all five
+        parameters. Fitting preserves the original sample order.
+
         Args:
             data: Data to analyze.
             coords: Coordinate(s) along which to perform curve fitting.
@@ -210,7 +214,8 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         Raises:
             ValueError: If a named one-dimensional coordinate contains
-                NaN or infinity.
+                NaN or infinity, or if it is not strictly increasing
+                and complete initial values are not supplied.
         """
         options = {} if curvefit_kwargs is None else dict(curvefit_kwargs)
 
@@ -233,6 +238,14 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
                     raise ValueError(
                         "Time coordinates must contain only finite values."
                     )
+                time = coordinate.to_numpy()
+                if np.any(time[1:] <= time[:-1]):
+                    required = {"a", "b", "tau", "f", "phi"}
+                    if guess is None or not required.issubset(guess):
+                        raise ValueError(
+                            "Non-increasing time coordinates require initial "
+                            "guesses for a, b, tau, f, and phi."
+                        )
 
                 dim = coordinate.dims[0]
                 first = data.isel({dim: 0}, drop=True)
