@@ -362,3 +362,80 @@ def test_damped_oscillation_analysis_multiple_traces(time_first):
 
     assert_allclose(fitted, data, rtol=1e-5, atol=1e-7)
     assert_identical(data, original_data)
+
+
+@pytest.mark.parametrize("time_first", [False, True])
+def test_damped_oscillation_analysis_complex_iq_multiple_traces(time_first):
+    """Recover separate decay parameters from differently rotated IQ traces."""
+    time_values = np.linspace(0, 40, 401)
+    time = xr.DataArray(
+        time_values,
+        coords=[("idle_time", time_values)],
+    )
+    expected = xr.Dataset(
+        {
+            "tau": ("trace", [8.0, 12.0, 18.0]),
+            "f": ("trace", [0.4, 0.55, 0.7]),
+            "iq_rotation": ("trace", [0.4, np.pi / 2, 2.0]),
+            "iq_offset": (
+                "trace",
+                [1.1 - 0.6j, -0.4 + 0.9j, 0.7 + 0.3j],
+            ),
+        },
+        coords={"trace": ["short", "middle", "long"]},
+    )
+
+    # Generate real oscillations, then rotate and offset each IQ trace.
+    signal = 0.2 + 0.8 * np.exp(-time / expected.tau) * np.cos(
+        2 * np.pi * expected.f * time + 0.4
+    )
+    data = expected.iq_offset + np.exp(1j * expected.iq_rotation) * signal
+
+    if time_first:
+        data = data.transpose("idle_time", "trace")
+    else:
+        data = data.transpose("trace", "idle_time")
+
+    data.attrs["dataset_id"] = "test"
+    data.idle_time.attrs["units"] = "us"
+    original_data = data.copy(deep=True)
+
+    # Run the full analysis without manual projection or initial guesses.
+    result = DampedOscillationAnalysis.run(data, coords="idle_time")
+
+    assert result.success.dims == ("trace",)
+    assert_identical(result.success.trace, expected.trace)
+    assert result.success.all()
+    assert_allclose(
+        result.params[["tau", "f"]],
+        expected[["tau", "f"]],
+        rtol=1e-5,
+        atol=0,
+    )
+
+    # Projection should recover the centered signal up to an overall sign
+    # for each trace.
+    assert result.intermediate_results is not None
+    recorded = result.intermediate_results.preprocessed_data.transpose(*data.dims)
+    assert not np.iscomplexobj(recorded)
+
+    expected_projection = (
+        (signal - signal.mean("idle_time"))
+        .transpose(*data.dims)
+        .rename("preprocessed_data")
+    )
+    assert_allclose(
+        abs(recorded),
+        abs(expected_projection),
+        rtol=1e-7,
+        atol=1e-12,
+    )
+
+    # The fitted curve should reproduce the actual projected signal.
+    fitted = DampedOscillationAnalysis.func(
+        recorded.idle_time,
+        **result.fit_params,
+    ).transpose(*data.dims)
+    assert_allclose(fitted, recorded, rtol=1e-5, atol=1e-7)
+
+    assert_identical(data, original_data)
