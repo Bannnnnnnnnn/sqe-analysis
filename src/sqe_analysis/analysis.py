@@ -196,6 +196,9 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         marked as unsuccessful. Their entries in ``params`` and
         ``fit_params`` are replaced by NaN.
 
+        A named one-dimensional coordinate must contain only finite
+        values, even when ``skipna=True`` is supplied.
+
         Args:
             data: Data to analyze.
             coords: Coordinate(s) along which to perform curve fitting.
@@ -204,6 +207,10 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         Returns:
             The curve-fitting analysis result.
+
+        Raises:
+            ValueError: If a named one-dimensional coordinate contains
+                NaN or infinity.
         """
         options = {} if curvefit_kwargs is None else dict(curvefit_kwargs)
 
@@ -222,6 +229,11 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         if isinstance(coords, str):
             coordinate = data[coords]
             if coordinate.ndim == 1 and coordinate.size > 0:
+                if not np.isfinite(coordinate).all():
+                    raise ValueError(
+                        "Time coordinates must contain only finite values."
+                    )
+
                 dim = coordinate.dims[0]
                 first = data.isel({dim: 0}, drop=True)
                 constant = (data == first).all(dim)

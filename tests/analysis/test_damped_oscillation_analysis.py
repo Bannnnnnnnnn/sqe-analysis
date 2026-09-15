@@ -604,3 +604,43 @@ def test_damped_oscillation_analysis_all_nan_trace_does_not_affect_signal(
     assert_allclose(fitted, valid_data, rtol=1e-5, atol=1e-7)
 
     assert_identical(data, original_data)
+
+
+@pytest.mark.parametrize(
+    "invalid_time",
+    [np.nan, np.inf, -np.inf],
+    ids=["nan", "positive_inf", "negative_inf"],
+)
+def test_damped_oscillation_analysis_rejects_nonfinite_time(invalid_time):
+    """Reject nonfinite time coordinates even with manual guesses."""
+    time = np.linspace(0, 40, 401)
+    signal = 0.2 + 0.8 * np.exp(-time / 12) * np.cos(2 * np.pi * 0.4 * time + 0.4)
+
+    invalid_coordinate = time.copy()
+    invalid_coordinate[100] = invalid_time
+
+    data = xr.DataArray(
+        signal,
+        coords=[("idle_time", invalid_coordinate)],
+        attrs={"dataset_id": "test"},
+    )
+    data.idle_time.attrs["units"] = "us"
+    original_data = data.copy(deep=True)
+
+    with pytest.raises(
+        ValueError,
+        match="Time coordinates must contain only finite values",
+    ):
+        DampedOscillationAnalysis.run(
+            data,
+            coords="idle_time",
+            guess={
+                "a": 0.7,
+                "b": 0.1,
+                "tau": 10.0,
+                "f": 0.404,
+                "phi": 0.3,
+            },
+        )
+
+    assert_identical(data, original_data)
