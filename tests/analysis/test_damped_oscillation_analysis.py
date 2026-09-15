@@ -8,6 +8,7 @@ import xarray as xr
 from xarray.testing import assert_allclose, assert_identical
 
 from sqe_analysis.analysis import DampedOscillationAnalysis
+from sqe_analysis.signal_processing import project_complex
 
 
 @pytest.mark.parametrize("automatic_f", [False, True])
@@ -255,3 +256,44 @@ def test_damped_oscillation_analysis_rejects_negative_tau_guess():
             coords="idle_time",
             guess={"tau": -12.0},
         )
+
+
+@pytest.mark.parametrize("iq_rotation", [0.4, np.pi / 2, 2.0])
+def test_damped_oscillation_analysis_complex_iq(iq_rotation):
+    """Recover decay time and frequency from rotated complex readout IQ."""
+    time = np.linspace(0, 40, 401)
+    signal = 0.2 + 0.8 * np.exp(-time / 12) * np.cos(2 * np.pi * 0.4 * time + 0.4)
+
+    data = xr.DataArray(
+        (1.1 - 0.6j) + np.exp(1j * iq_rotation) * signal,
+        coords=[("idle_time", time)],
+        attrs={"dataset_id": "test"},
+    )
+    data.idle_time.attrs["units"] = "us"
+    original_data = data.copy(deep=True)
+
+    projected = DampedOscillationAnalysis.preprocess(
+        data,
+        coords="idle_time",
+    )
+    assert projected is not None
+    assert not np.iscomplexobj(projected)
+    assert_allclose(projected, project_complex(data, dim="idle_time"))
+
+    result = DampedOscillationAnalysis.run(data, coords="idle_time")
+
+    assert result.success.all()
+    assert result.params.tau.item() == pytest.approx(12, rel=1e-5, abs=0)
+    assert result.params.f.item() == pytest.approx(0.4, rel=1e-5, abs=0)
+
+    assert result.intermediate_results is not None
+    recorded = result.intermediate_results.preprocessed_data
+    assert_allclose(recorded, projected.rename("preprocessed_data"))
+
+    assert_allclose(
+        DampedOscillationAnalysis.func(recorded.idle_time, **result.fit_params),
+        recorded,
+        rtol=1e-5,
+        atol=1e-7,
+    )
+    assert_identical(data, original_data)

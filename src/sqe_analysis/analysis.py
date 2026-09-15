@@ -36,9 +36,17 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         b + a \cdot \exp(-x / \tau) \cdot \cos(2\pi f x + \phi)
 
-    to real-valued data. For supported inputs, :py:meth:`guess` estimates
-    initial values for all model parameters. Values supplied through the
-    ``guess`` argument of :py:meth:`run` override these estimates.
+    to real-valued data. Complex readout IQ is projected to the real axis
+    using :py:func:`~sqe_analysis.signal_processing.project_complex`
+    in :py:meth:`preprocess`.
+
+    For supported inputs, :py:meth:`guess` estimates initial values for all
+    model parameters. Values supplied through the ``guess`` argument of
+    :py:meth:`run` override these estimates.
+
+    For complex input, ``a``, ``b``, and ``phi`` describe the projected
+    signal. The projection subtracts the complex mean and may reverse
+    the signal's sign.
 
     The decay time ``tau`` has the same units as ``x``, and the frequency ``f``
     has the inverse units of ``x``. The phase ``phi`` is in radians.
@@ -171,6 +179,41 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             guess=guess,
             curvefit_kwargs=options,
         )
+
+    @classmethod
+    @override
+    def preprocess(
+        cls,
+        data: xr.DataArray,
+        coords: CurvefitCoordsType,
+    ) -> xr.DataArray | None:
+        """
+        Project complex readout IQ to the real axis.
+
+        Args:
+            data: Real-valued data or complex readout IQ.
+            coords: For complex input, the name of a one-dimensional
+                coordinate along which to perform the projection.
+
+        Returns:
+            The projected data, or ``None`` for real-valued input.
+
+        Raises:
+            TypeError: If complex input uses a coordinate specification
+                other than a string.
+            ValueError: If the named coordinate is not one-dimensional.
+        """
+        if not np.iscomplexobj(data):
+            return None
+
+        if not isinstance(coords, str):
+            raise TypeError("Complex data require a named one-dimensional coordinate.")
+
+        coordinate = data[coords]
+        if coordinate.ndim != 1:
+            raise ValueError("Complex data require a named one-dimensional coordinate.")
+
+        return project_complex(data, dim=coordinate.dims[0])
 
 
 class ExponentialRegressionAnalysis(BaseAnalysis):
