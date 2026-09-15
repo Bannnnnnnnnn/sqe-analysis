@@ -441,9 +441,15 @@ def test_damped_oscillation_analysis_complex_iq_multiple_traces(time_first):
     assert_identical(data, original_data)
 
 
+@pytest.mark.parametrize(
+    "bounded_frequency",
+    [False, True],
+    ids=["default", "bounded"],
+)
 @pytest.mark.parametrize("time_first", [False, True])
 def test_damped_oscillation_analysis_constant_trace_does_not_affect_signal(
     time_first,
+    bounded_frequency,
 ):
     """Reject a constant trace while recovering a neighboring oscillation."""
     time = np.linspace(0, 40, 401)
@@ -463,8 +469,16 @@ def test_damped_oscillation_analysis_constant_trace_does_not_affect_signal(
     data.idle_time.attrs["units"] = "us"
     original_data = data.copy(deep=True)
 
+    curvefit_kwargs = {}
+    if bounded_frequency:
+        curvefit_kwargs["bounds"] = {"f": (0.3, 0.5)}
+
     # Analyze both traces together, without manual initial guesses.
-    result = DampedOscillationAnalysis.run(data, coords="idle_time")
+    result = DampedOscillationAnalysis.run(
+        data,
+        coords="idle_time",
+        curvefit_kwargs=curvefit_kwargs,
+    )
 
     # Automatic guesses must remain available for the valid trace.
     assert result.fit_params_guess is not None
@@ -505,3 +519,16 @@ def test_damped_oscillation_analysis_constant_trace_does_not_affect_signal(
     assert_allclose(fitted, valid_data, rtol=1e-5, atol=1e-7)
 
     assert_identical(data, original_data)
+
+    if bounded_frequency:
+        assert curvefit_kwargs == {"bounds": {"f": (0.3, 0.5)}}
+
+        with pytest.raises(ValueError, match="bounds"):
+            DampedOscillationAnalysis.run(
+                data,
+                coords="idle_time",
+                guess={"f": 0.2},
+                curvefit_kwargs=curvefit_kwargs,
+            )
+    else:
+        assert curvefit_kwargs == {}
