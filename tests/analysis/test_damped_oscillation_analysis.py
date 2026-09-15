@@ -644,3 +644,88 @@ def test_damped_oscillation_analysis_rejects_nonfinite_time(invalid_time):
         )
 
     assert_identical(data, original_data)
+
+
+@pytest.mark.parametrize(
+    "time_order",
+    ["duplicate", "descending", "local_reversal"],
+)
+@pytest.mark.parametrize("guess_mode", ["none", "partial", "complete"])
+def test_damped_oscillation_analysis_nonincreasing_time(
+    time_order,
+    guess_mode,
+):
+    """Require complete manual guesses for non-increasing time."""
+    time = np.linspace(0, 40, 401)
+
+    if time_order == "duplicate":
+        time[100] = time[99]
+    elif time_order == "descending":
+        time = time[::-1]
+    else:
+        time[[100, 101]] = time[[101, 100]]
+
+    signal = 0.2 + 0.8 * np.exp(-time / 12) * np.cos(2 * np.pi * 0.4 * time + 0.4)
+
+    data = xr.DataArray(
+        signal,
+        coords=[("idle_time", time)],
+        attrs={"dataset_id": "test"},
+    )
+    data.idle_time.attrs["units"] = "us"
+    original_data = data.copy(deep=True)
+
+    if guess_mode == "none":
+        guess = None
+    elif guess_mode == "partial":
+        guess = {"f": 0.404}
+    else:
+        guess = {
+            "a": 0.7,
+            "b": 0.1,
+            "tau": 10.0,
+            "f": 0.404,
+            "phi": 0.3,
+        }
+
+    original_guess = None if guess is None else dict(guess)
+
+    assert DampedOscillationAnalysis.guess(data, coords="idle_time") is None
+
+    if guess_mode == "complete":
+        result = DampedOscillationAnalysis.run(
+            data,
+            coords="idle_time",
+            guess=guess,
+        )
+
+        assert result.success.item()
+        assert result.params.tau.item() == pytest.approx(
+            12.0,
+            rel=1e-5,
+            abs=0,
+        )
+        assert result.params.f.item() == pytest.approx(
+            0.4,
+            rel=1e-5,
+            abs=0,
+        )
+
+        fitted = DampedOscillationAnalysis.func(
+            data.idle_time,
+            **result.fit_params,
+        )
+        assert_allclose(fitted, data, rtol=1e-5, atol=1e-7)
+    else:
+        with pytest.raises(
+            ValueError,
+            match="Non-increasing time coordinates require initial guesses",
+        ):
+            DampedOscillationAnalysis.run(
+                data,
+                coords="idle_time",
+                guess=guess,
+            )
+
+    assert_identical(data, original_data)
+    assert guess == original_guess
