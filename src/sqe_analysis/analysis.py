@@ -57,6 +57,11 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
     def func(cls, x: ArrayLike, a, b, tau, f, phi) -> ArrayLike:
         return b + a * np.exp(-x / tau) * np.cos(2 * np.pi * f * x + phi)
 
+    @staticmethod
+    def _has_uniform_steps(steps: np.ndarray) -> bool:
+        """Check uniform spacing for a nonempty array of time steps."""
+        return bool(np.allclose(steps, steps[0], rtol=1e-6, atol=0))
+
     @classmethod
     @override
     def guess(
@@ -115,7 +120,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             return None
 
         steps = np.diff(time)
-        if steps[0] <= 0 or not np.allclose(steps, steps[0], rtol=1e-6, atol=0):
+        if steps[0] <= 0 or not cls._has_uniform_steps(steps):
             return None
 
         # All traces share the same coordinate and provisional decay time.
@@ -199,9 +204,10 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         A named one-dimensional coordinate must contain only finite
         values, even when ``skipna=True`` is supplied.
 
-        Named one-dimensional coordinates containing duplicate or
-        decreasing times require explicit initial values for all five
-        parameters. Fitting preserves the original sample order.
+        Named one-dimensional coordinates that are not strictly
+        increasing or not uniformly spaced require explicit initial
+        values for all five parameters. Fitting preserves the original
+        sample order.
 
         Args:
             data: Data to analyze.
@@ -214,8 +220,8 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         Raises:
             ValueError: If a named one-dimensional coordinate contains
-                NaN or infinity, or if it is not strictly increasing
-                and complete initial values are not supplied.
+                NaN or infinity, or if complete initial values are
+                missing for non-increasing or nonuniform coordinates.
         """
         options = {} if curvefit_kwargs is None else dict(curvefit_kwargs)
 
@@ -239,11 +245,20 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
                         "Time coordinates must contain only finite values."
                     )
                 time = coordinate.to_numpy()
+                manual_guess_reason = None
+
                 if np.any(time[1:] <= time[:-1]):
+                    manual_guess_reason = "Non-increasing"
+                elif time.size >= 3:
+                    steps = np.diff(time.astype(float))
+                    if not cls._has_uniform_steps(steps):
+                        manual_guess_reason = "Nonuniform"
+
+                if manual_guess_reason is not None:
                     required = {"a", "b", "tau", "f", "phi"}
                     if guess is None or not required.issubset(guess):
                         raise ValueError(
-                            "Non-increasing time coordinates require initial "
+                            f"{manual_guess_reason} time coordinates require initial "
                             "guesses for a, b, tau, f, and phi."
                         )
 
