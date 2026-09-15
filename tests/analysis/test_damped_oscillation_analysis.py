@@ -532,3 +532,75 @@ def test_damped_oscillation_analysis_constant_trace_does_not_affect_signal(
             )
     else:
         assert curvefit_kwargs == {}
+
+
+@pytest.mark.parametrize("time_first", [False, True])
+def test_damped_oscillation_analysis_all_nan_trace_does_not_affect_signal(
+    time_first,
+):
+    """Preserve automatic fitting beside a completely missing trace."""
+    time = np.linspace(0, 40, 401)
+    signal = 0.2 + 0.8 * np.exp(-time / 12) * np.cos(2 * np.pi * 0.4 * time + 0.4)
+
+    data = xr.DataArray(
+        np.stack([signal, np.full_like(time, np.nan)]),
+        coords=[
+            ("trace", ["signal", "missing"]),
+            ("idle_time", time),
+        ],
+        attrs={"dataset_id": "test"},
+    )
+    if time_first:
+        data = data.transpose("idle_time", "trace")
+
+    data.idle_time.attrs["units"] = "us"
+    original_data = data.copy(deep=True)
+
+    result = DampedOscillationAnalysis.run(data, coords="idle_time")
+
+    # Missing data must not disable automatic guesses for the valid trace.
+    assert result.fit_params_guess is not None
+
+    initial_frequency = result.fit_params_guess.f
+    assert initial_frequency.dims == ("trace",)
+    assert_identical(initial_frequency.trace, data.trace)
+
+    frequency_step = 1 / (time.size * (time[1] - time[0]))
+    assert initial_frequency.sel(trace="signal").item() == pytest.approx(
+        0.4,
+        rel=0,
+        abs=frequency_step,
+    )
+
+    # Preserve trace labels and report the missing trace as unsuccessful.
+    assert result.success.dims == ("trace",)
+    assert_identical(result.success.trace, data.trace)
+    assert not result.success.sel(trace="missing").item()
+
+    for params in (result.params, result.fit_params):
+        missing = params[["tau", "f"]].sel(trace="missing")
+        assert missing.to_array().isnull().all()
+
+    # The valid trace must still recover its known parameters and waveform.
+    assert result.success.sel(trace="signal").item()
+
+    valid_params = result.params.sel(trace="signal", drop=True)
+    assert valid_params.tau.item() == pytest.approx(
+        12.0,
+        rel=1e-5,
+        abs=0,
+    )
+    assert valid_params.f.item() == pytest.approx(
+        0.4,
+        rel=1e-5,
+        abs=0,
+    )
+
+    valid_data = data.sel(trace="signal", drop=True)
+    fitted = DampedOscillationAnalysis.func(
+        valid_data.idle_time,
+        **result.fit_params.sel(trace="signal", drop=True),
+    )
+    assert_allclose(fitted, valid_data, rtol=1e-5, atol=1e-7)
+
+    assert_identical(data, original_data)
