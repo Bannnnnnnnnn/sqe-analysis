@@ -36,9 +36,9 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         b + a \cdot \exp(-x / \tau) \cdot \cos(2\pi f x + \phi)
 
-    to real-valued data. For supported inputs, :py:meth:`guess` estimates the
-    initial amplitude, offset, and frequency. Supply initial values for ``tau``
-    and ``phi`` using the ``guess`` argument of :py:meth:`run`.
+    to real-valued data. For supported inputs, :py:meth:`guess` estimates
+    initial values for all model parameters. Values supplied through the
+    ``guess`` argument of :py:meth:`run` override these estimates.
 
     The decay time ``tau`` has the same units as ``x``, and the frequency ``f``
     has the inverse units of ``x``. The phase ``phi`` is in radians.
@@ -57,10 +57,14 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         coords: CurvefitCoordsType,
     ) -> CurvefitGuessType | None:
         """
-        Crude initial guesses for amplitude, offset, and frequency
+        Crude initial guesses for damped oscillation parameters
 
         Supports one-dimensional real data with finite values and a named,
         increasing, uniformly spaced numeric coordinate.
+
+        The frequency is estimated using the FFT. The initial decay time
+        is half the coordinate span. Amplitude, offset, and phase are
+        estimated by linear least squares at that frequency and decay time.
 
         Returns None if no initial guesses can be generated.
         """
@@ -93,18 +97,32 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             return None
 
         centered = values - values.mean()
-        amplitude = (values.max() - values.min()) / 2
-        baseline = values.mean()
-
-        centered = values - baseline
         amplitudes = np.abs(np.fft.rfft(centered))
         frequencies = np.fft.rfftfreq(time.size, d=steps[0])
         peak_index = np.argmax(amplitudes[1:]) + 1
+        frequency = float(frequencies[peak_index])
+
+        # Use the observation span to set a provisional decay time.
+        tau = (time[-1] - time[0]) / 2
+
+        envelope = np.exp(-time / tau)
+        angle = 2 * np.pi * frequency * time
+
+        design = np.column_stack(
+            (
+                envelope * np.cos(angle),
+                envelope * np.sin(angle),
+                np.ones_like(time),
+            )
+        )
+        cosine, sine, baseline = np.linalg.lstsq(design, values, rcond=None)[0]
 
         return {
-            "a": float(amplitude),
+            "a": float(np.hypot(cosine, sine)),
             "b": float(baseline),
-            "f": float(frequencies[peak_index]),
+            "tau": float(tau),
+            "f": frequency,
+            "phi": float(np.arctan2(-sine, cosine)),
         }
 
 
