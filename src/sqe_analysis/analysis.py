@@ -67,19 +67,25 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         """
         Crude initial guesses for damped oscillation parameters
 
-        Supports real data with finite values and a named, one-dimensional,
-        increasing, uniformly spaced numeric coordinate.
+        Supports real data with a named, one-dimensional, increasing,
+        uniformly spaced numeric coordinate. Each trace must contain
+        either only finite values or only NaN values.
 
-        For nonconstant traces, frequency is estimated using the FFT.
-        The initial decay time is half the coordinate span. Amplitude,
-        offset, and phase are estimated by linear least squares.
+        For finite, nonconstant traces, frequency is estimated using
+        the FFT. The initial decay time is half the coordinate span.
+        Amplitude, offset, and phase are estimated by linear least
+        squares.
 
         Constant traces use zero amplitude and their constant value as
         the baseline. Their remaining initial values are numerical
         placeholders. The run method marks these traces as unsuccessful.
 
-        Returns None if the coordinate is unsupported or any trace
-        contains nonfinite values.
+        All-NaN traces have NaN guesses for amplitude, offset, frequency,
+        and phase. The provisional decay time is shared across traces
+        and depends only on the coordinate.
+
+        Returns None for unsupported coordinates, partially missing
+        traces, or traces containing infinity.
         """
         y = preprocessed_data
         if not isinstance(coords, str):
@@ -100,7 +106,12 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             return None
 
         time = x.to_numpy().astype(float)
-        if not np.isfinite(time).all() or not np.isfinite(y).all():
+        if not np.isfinite(time).all():
+            return None
+
+        finite_trace = np.isfinite(y).all(dim)
+        all_nan_trace = y.isnull().all(dim)
+        if not (finite_trace | all_nan_trace).all():
             return None
 
         steps = np.diff(time)
@@ -114,6 +125,10 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         def guess_trace(values):
             values = np.asarray(values, dtype=float)
+
+            if np.isnan(values).all():
+                # No signal-derived initial estimates are available.
+                return np.nan, np.nan, np.nan, np.nan
 
             if np.all(values == values[0]):
                 # Represent a constant with zero amplitude.
