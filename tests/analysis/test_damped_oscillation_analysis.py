@@ -139,3 +139,48 @@ def test_damped_oscillation_analysis_amplitude_offset_guess(
         atol=1e-8,
     )
     assert_identical(data, original_data)
+
+
+@pytest.mark.parametrize(
+    "time_unit, time_scale",
+    [("s", 1.0), ("us", 1e6), ("ns", 1e9)],
+)
+def test_damped_oscillation_analysis_without_guess(time_unit, time_scale):
+    """Recover the same physical paramters withou explicit initial guessses."""
+    time_s = np.linspace(0, 40e-6, 401)
+
+    data = xr.DataArray(
+        0.2 + 0.8 * np.exp(-time_s / 12e-6) * np.cos(2 * np.pi * 400e3 * time_s + 0.4),
+        coords=[("idle_time", time_s * time_scale)],
+        attrs={"dataset_id": "test"},
+    )
+    data.idle_time.attrs["units"] = time_unit
+
+    result = DampedOscillationAnalysis.run(
+        data,
+        coords="idle_time",
+    )
+
+    assert result.success.all()
+
+    tau_s = result.params.tau.item() / time_scale
+    frequency_hz = result.params.f.item() * time_scale
+
+    assert tau_s == pytest.approx(12e-6, rel=1e-5, abs=0)
+    assert frequency_hz == pytest.approx(400e3, rel=1e-5, abs=0)
+
+    assert_allclose(
+        DampedOscillationAnalysis.func(data.idle_time, **result.fit_params),
+        data,
+        rtol=1e-5,
+        atol=1e-7,
+    )
+
+    assert result.fit_params_guess is not None
+    assert set(result.fit_params_guess.data_vars) == {
+        "a",
+        "b",
+        "tau",
+        "f",
+        "phi",
+    }
