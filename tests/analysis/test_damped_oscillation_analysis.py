@@ -297,3 +297,68 @@ def test_damped_oscillation_analysis_complex_iq(iq_rotation):
         atol=1e-7,
     )
     assert_identical(data, original_data)
+
+
+@pytest.mark.parametrize("time_first", [False, True])
+def test_damped_oscillation_analysis_multiple_traces(time_first):
+    """Recover separate parameters while preserving trace coordinates."""
+    time_values = np.linspace(0, 40, 401)
+    time = xr.DataArray(
+        time_values,
+        coords=[("idle_time", time_values)],
+    )
+    expected = xr.Dataset(
+        {
+            "tau": ("trace", [8.0, 18.0]),
+            "f": ("trace", [0.4, 0.7]),
+        },
+        coords={"trace": ["short", "long"]},
+    )
+
+    data = 0.2 + 0.8 * np.exp(-time / expected.tau) * np.cos(
+        2 * np.pi * expected.f * time + 0.4
+    )
+    if time_first:
+        data = data.transpose("idle_time", "trace")
+    else:
+        data = data.transpose("trace", "idle_time")
+
+    data.attrs["dataset_id"] = "test"
+    data.idle_time.attrs["units"] = "us"
+    original_data = data.copy(deep=True)
+
+    guesses = DampedOscillationAnalysis.guess(data, coords="idle_time")
+
+    assert guesses is not None
+    assert set(guesses) == {"a", "b", "tau", "f", "phi"}
+    assert isinstance(guesses["f"], xr.DataArray)
+    assert guesses["f"].dims == ("trace",)
+    assert_identical(guesses["f"].trace, expected.trace)
+
+    frequency_step = 1 / (time_values.size * (time_values[1] - time_values[0]))
+    assert_allclose(
+        guesses["f"].rename("f"),
+        expected.f,
+        rtol=0,
+        atol=frequency_step,
+    )
+
+    result = DampedOscillationAnalysis.run(data, coords="idle_time")
+
+    assert result.success.dims == ("trace",)
+    assert_identical(result.success.trace, expected.trace)
+    assert result.success.all()
+    assert_allclose(
+        result.params[["tau", "f"]],
+        expected,
+        rtol=1e-5,
+        atol=0,
+    )
+
+    fitted = DampedOscillationAnalysis.func(
+        data.idle_time,
+        **result.fit_params,
+    ).transpose(*data.dims)
+
+    assert_allclose(fitted, data, rtol=1e-5, atol=1e-7)
+    assert_identical(data, original_data)
