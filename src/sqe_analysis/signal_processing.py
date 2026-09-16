@@ -97,11 +97,10 @@ def simple_dft(
         np.fft.fft,
         data,
         input_core_dims=[[dim]],
-        output_core_dims=[[dim]],
+        output_core_dims=[[frequency_dim_name]],
         kwargs={"norm": norm},
     )
 
-    spec = spec.rename({dim: frequency_dim_name})
     spec = spec.assign_coords({frequency_dim_name: f})
     spec = spec.sortby(frequency_dim_name)
     return spec
