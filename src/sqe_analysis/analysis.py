@@ -22,7 +22,7 @@ from sqe_analysis.result import (
     CurvefitAnalysisResult,
     get_source_dataset_id,
 )
-from sqe_analysis.signal_processing import project_complex
+from sqe_analysis.signal_processing import project_complex, simple_dft
 from sqe_analysis.xarray_util import longest_dim
 
 
@@ -120,18 +120,23 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         # All traces share the same coordinate and provisional decay time.
         tau = float((time[-1] - time[0]) / 2)
-        frequencies = np.fft.rfftfreq(time.size, d=steps[0])
+
+        spec = simple_dft(y, coords)
+        # Select only positive frequencies (because we're not using rfft) -
+        # exclude the DC component too
+        spec = spec.where(spec.frequency > 0, drop=True)
+
+        peak_loc = abs(spec).idxmax("frequency")
+        angle = 2 * np.pi * peak_loc * x
+
         envelope = np.exp(-time / tau)
 
-        def guess_trace(values):
-            values = np.asarray(values, dtype=float)
+        def guess_trace(trace, angle):
+            if np.isnan(trace).all():
+                # lstsq doesn't support NaNs
+                return (np.nan, np.nan, np.nan)
 
-            centered = values - values.mean()
-            amplitudes = np.abs(np.fft.rfft(centered))
-            peak_index = np.argmax(amplitudes[1:]) + 1
-            frequency = float(frequencies[peak_index])
-
-            angle = 2 * np.pi * frequency * time
+            # TODO: convert the rest of this function to xarray
             design = np.column_stack(
                 (
                     envelope * np.cos(angle),
@@ -139,29 +144,29 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
                     np.ones_like(time),
                 )
             )
-            cosine, sine, baseline = np.linalg.lstsq(design, values, rcond=None)[0]
+            cosine, sine, baseline = np.linalg.lstsq(design, trace, rcond=None)[0]
 
             return (
                 float(np.hypot(cosine, sine)),
                 float(baseline),
-                frequency,
                 float(2 * np.pi * np.arctan2(-sine, cosine)),
             )
 
-        amplitude, baseline, frequency, phase = xr.apply_ufunc(
+        amplitude, baseline, phase = xr.apply_ufunc(
             guess_trace,
             y,
-            input_core_dims=[[dim]],
-            output_core_dims=[[], [], [], []],
+            angle,
+            input_core_dims=[[dim], [dim]],
+            output_core_dims=[[], [], []],
             vectorize=True,
-            output_dtypes=[float, float, float, float],
+            output_dtypes=[float, float, float],
         )
 
         return {
             "a": amplitude,
             "b": baseline,
             "tau": tau,
-            "f": frequency,
+            "f": peak_loc,
             "phi": phase,
         }
 
