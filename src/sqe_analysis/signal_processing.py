@@ -7,7 +7,7 @@ or `xrft <https://xrft.readthedocs.io/>`_. Those libraries should be preferred
 whenever the desired functionality is available.
 """
 
-from typing import cast, overload
+from typing import Literal, cast, overload
 
 import numpy as np
 import xarray as xr
@@ -62,3 +62,42 @@ def project_complex(
         result = result.real
 
     return result
+
+
+def simple_dft(
+    data: xr.DataArray,
+    dim: str,
+    frequency_dim_name: str = "frequency",
+    norm: Literal["backward", "ortho", "forward"] | None = None,
+) -> xr.DataArray:
+    """
+    Simple discrete Fourier transform of a DataArray
+
+    This is a simple wrapper around the `NumPy fft function
+    <https://numpy.org/doc/stable/reference/generated/numpy.fft.fft.html>`_. For
+    more advanced use, see the `xrft <https://xrft.readthedocs.io/>`_ package.
+
+    Assumes that the transform dimension is evenly spaced.
+
+    Args:
+        data: Data array to transform
+        dim: Dimension along which to apply transform, usually time
+        frequency_dim_name: Name of the transformed dimension in the output data.
+        norm: Normalization mode, see the `numpy documentation <https://numpy.org/doc/stable/reference/generated/numpy.fft.fft.html>`_ for details.
+    """
+    t = data[dim]
+    dt = (t[1] - t[0]).item()
+    f = np.fft.fftfreq(t.size, d=dt)
+
+    spec = xr.apply_ufunc(
+        np.fft.fft,
+        data,
+        input_core_dims=[[dim]],
+        output_core_dims=[[dim]],
+        kwargs={"norm": norm},
+    )
+
+    spec = spec.rename({dim: frequency_dim_name})
+    spec = spec.assign_coords({frequency_dim_name: f})
+    spec = spec.sortby(frequency_dim_name)
+    return spec
