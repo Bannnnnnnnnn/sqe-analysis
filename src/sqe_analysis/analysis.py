@@ -118,55 +118,31 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lombscargle.html
             return None
 
-        # All traces share the same coordinate and provisional decay time.
-        tau = float((time[-1] - time[0]) / 2)
-
-        spec = simple_dft(y, coords)
+        # use non-default frequency_dim_name so that we don't conflict with a
+        # possible dimension named 'frequency' on the data
+        spec = simple_dft(y, coords, frequency_dim_name="_f")
         # Select only positive frequencies (because we're not using rfft) -
         # exclude the DC component too
-        spec = spec.where(spec.frequency > 0, drop=True)
+        spec = spec.where(spec._f > 0, drop=True)
 
-        peak_loc = abs(spec).idxmax("frequency")
-        angle = 2 * np.pi * peak_loc * x
+        # use argmax with skipna=False + isel instead of idxmax + sel, so that NaNs are handled correctly
+        peak_idx = abs(spec).argmax("_f", skipna=False)
+        # drop_vars so that the extra '_f' dimension is not in the result
+        peak = spec.isel(_f=peak_idx).drop_vars("_f")
+        peak_freq = spec._f.isel(_f=peak_idx).drop_vars("_f")
 
-        envelope = np.exp(-time / tau)
-
-        def guess_trace(trace, angle):
-            if np.isnan(trace).all():
-                # lstsq doesn't support NaNs
-                return (np.nan, np.nan, np.nan)
-
-            # TODO: convert the rest of this function to xarray
-            design = np.column_stack(
-                (
-                    envelope * np.cos(angle),
-                    envelope * np.sin(angle),
-                    np.ones_like(time),
-                )
-            )
-            cosine, sine, baseline = np.linalg.lstsq(design, trace, rcond=None)[0]
-
-            return (
-                float(np.hypot(cosine, sine)),
-                float(baseline),
-                float(2 * np.pi * np.arctan2(-sine, cosine)),
-            )
-
-        amplitude, baseline, phase = xr.apply_ufunc(
-            guess_trace,
-            y,
-            angle,
-            input_core_dims=[[dim], [dim]],
-            output_core_dims=[[], [], []],
-            vectorize=True,
-            output_dtypes=[float, float, float],
-        )
+        # TODO: consider better guess for tau based on peak width
+        tau = float((time[-1] - time[0]) / 2)
+        baseline = y.mean(coords)
+        # divide by envelope mean to account for the reduced amplitude due to the decay
+        amplitude = 2 * abs(peak) / (x.size * np.exp(-x / tau).mean())
+        phase = 2 * np.pi * np.arctan2(peak.imag, peak.real) # multiply by 2pi to get turns
 
         return {
             "a": amplitude,
             "b": baseline,
             "tau": tau,
-            "f": peak_loc,
+            "f": peak_freq,
             "phi": phase,
         }
 
