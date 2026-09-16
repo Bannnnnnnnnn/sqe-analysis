@@ -86,6 +86,10 @@ def simple_dft(
         norm: Normalization mode, see the `numpy documentation <https://numpy.org/doc/stable/reference/generated/numpy.fft.fft.html>`_ for details.
     """
     t = data[dim]
+    if t.size < 2:
+        raise ValueError(
+            f"Dimension '{dim}' must have at least 2 points for DFT, got {t.size}"
+        )
     dt = (t[1] - t[0]).item()
     f = np.fft.fftfreq(t.size, d=dt)
 
