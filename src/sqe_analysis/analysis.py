@@ -34,7 +34,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
     .. math::
 
-        b + a \cdot \exp(-x / \tau) \cdot \cos(2\pi f x + \phi)
+        b + a \cdot \exp(-x / \tau) \cdot \cos\left(2\pi (f x + \phi)\right)
 
     to real-valued data. Complex readout IQ is projected to the real axis
     using :py:func:`~sqe_analysis.signal_processing.project_complex`
@@ -49,13 +49,13 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
     the signal's sign.
 
     The decay time ``tau`` has the same units as ``x``, and the frequency ``f``
-    has the inverse units of ``x``. The phase ``phi`` is in radians.
+    has the inverse units of ``x``. Note that the phase ``phi`` is in *turns*.
     """
 
     @classmethod
     @override
     def func(cls, x: ArrayLike, a, b, tau, f, phi) -> ArrayLike:
-        return b + a * np.exp(-x / tau) * np.cos(2 * np.pi * f * x + phi)
+        return b + a * np.exp(-x / tau) * np.cos(2 * np.pi * (f * x + phi))
 
     @staticmethod
     def _has_uniform_steps(steps: np.ndarray) -> bool:
@@ -159,7 +159,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
                 float(np.hypot(cosine, sine)),
                 float(baseline),
                 frequency,
-                float(np.arctan2(-sine, cosine)),
+                float(2 * np.pi * np.arctan2(-sine, cosine)),
             )
 
         amplitude, baseline, frequency, phase = xr.apply_ufunc(

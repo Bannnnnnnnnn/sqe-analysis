@@ -20,7 +20,7 @@ def test_damped_oscillation_analysis_basic(time_unit, time_scale, automatic_f):
     f = 0.4e6 / time_scale
 
     data = xr.DataArray(
-        0.2 + 0.8 * np.exp(-time / tau) * np.cos(2 * np.pi * f * time + 0.4),
+        0.2 + 0.8 * np.exp(-time / tau) * np.cos(2 * np.pi * (f * time + 0.4)),
         coords=[("time", time)],
         attrs={"dataset_id": "test"},
     )
@@ -65,7 +65,7 @@ def test_damped_oscillation_analysis_nonuniform_time_with_manual_guess():
     time[1::2] += 20e-9
 
     data = xr.DataArray(
-        0.2 + 0.8 * np.exp(-time / 12e-6) * np.cos(2 * np.pi * 400e3 * time + 0.4),
+        0.2 + 0.8 * np.exp(-time / 12e-6) * np.cos(2 * np.pi * (400e3 * time + 0.4)),
         coords=[("time", time)],
         attrs={"dataset_id": "test"},
     )
@@ -103,7 +103,7 @@ def test_damped_oscillation_analysis_amplitude_offset_guess(
     f = 0.4e6 / time_scale
 
     data = xr.DataArray(
-        0.2 + 0.8 * np.exp(-time / tau) * np.cos(2 * np.pi * f * time + 0.4),
+        0.2 + 0.8 * np.exp(-time / tau) * np.cos(2 * np.pi * (f * time + 0.4)),
         coords=[("time", time)],
         attrs={"dataset_id": "test"},
     )
