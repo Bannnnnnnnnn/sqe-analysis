@@ -113,6 +113,9 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         steps = np.diff(time)
         if steps[0] <= 0 or not cls._has_uniform_steps(steps):
+            # TODO: if we need it, consider adding guess for frequency even with
+            # non-uniform step using e.g.
+            # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lombscargle.html
             return None
 
         # All traces share the same coordinate and provisional decay time.
