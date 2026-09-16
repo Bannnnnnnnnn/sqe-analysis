@@ -102,14 +102,6 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         dim = x.dims[0]
 
-        if (
-            not np.issubdtype(x.dtype, np.number)
-            or not np.issubdtype(y.dtype, np.number)
-            or np.iscomplexobj(x)
-            or np.iscomplexobj(y)
-        ):
-            return None
-
         time = x.to_numpy().astype(float)
         if not np.isfinite(time).all():
             return None
@@ -130,15 +122,6 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         def guess_trace(values):
             values = np.asarray(values, dtype=float)
-
-            if np.isnan(values).all():
-                # No signal-derived initial estimates are available.
-                return np.nan, np.nan, np.nan, np.nan
-
-            if np.all(values == values[0]):
-                # Represent a constant with zero amplitude.
-                # Frequency and phase are numerical placeholders.
-                return 0.0, float(values[0]), float(frequencies[1]), 0.0
 
             centered = values - values.mean()
             amplitudes = np.abs(np.fft.rfft(centered))
