@@ -204,7 +204,6 @@ class CurvefitAnalysis(BaseAnalysis):
             curvefit_kwargs: Keyword arguments passed to `xr.DataArray.curvefit`.
         """
         # TODO: automatically determine coords? longest dim? and separate subclass for 2D fit with 2 longest coords?
-        # TODO: bounds
 
         if guess is None:
             guess = {}
