@@ -7,6 +7,7 @@ For concrete classes implementing the analysis, see the
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
+from math import inf
 from typing import Any, cast, override
 
 import xarray as xr
@@ -260,8 +261,18 @@ class CurvefitAnalysis(BaseAnalysis):
                     copy=False,
                 )
 
-                if ((initial < lower) | (initial > upper)).any():
-                    del automatic_guess[name]
+                outside = (initial < lower) | (initial > upper)
+                if not outside.any():
+                    continue
+
+                has_lower = lower != -inf
+                has_upper = upper != inf
+
+                fallback = lower.where(has_lower, 0) / 2 + upper.where(has_upper, 0) / 2
+                fallback = fallback.where(has_lower, upper - 1)
+                fallback = fallback.where(has_upper, lower + 1)
+
+                automatic_guess[name] = xr.where(outside, fallback, initial)
 
             guess = {**automatic_guess, **guess}
 

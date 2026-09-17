@@ -7,7 +7,7 @@ from typing import override
 import numpy as np
 import pytest
 import xarray as xr
-from xarray.testing import assert_allclose
+from xarray.testing import assert_allclose, assert_identical
 
 from sqe_analysis.analysis_base import CurvefitAnalysis
 from sqe_analysis.result import CurvefitAnalysisResult
@@ -330,8 +330,8 @@ def test_curvefit_analysis_bounds(curvefit_kwargs, expected_a):
     assert result.params.b.item() == pytest.approx(10.0, abs=1e-6)
 
 
-def test_curvefit_analysis_discards_out_of_bounds_automatic_guess():
-    """Let Xarray initialize parameters with infeasible automatic guesses."""
+def test_curvefit_analysis_replaces_out_of_bounds_automatic_guess():
+    """Replace an infeasible automatic guess with an interior value."""
     x = np.linspace(-2.0, 2.0, 41)
     data = xr.DataArray(
         4.0 * x + 1.0,
@@ -350,7 +350,7 @@ def test_curvefit_analysis_discards_out_of_bounds_automatic_guess():
     assert result.params.b.item() == pytest.approx(1.0)
 
     assert result.fit_params_guess is not None
-    assert "a" not in result.fit_params_guess
+    assert result.fit_params_guess.a.item() == pytest.approx(3.5)
     assert result.fit_params_guess.b.item() == 0.0
 
 
@@ -382,3 +382,55 @@ def test_curvefit_analysis_preserves_manual_guess_with_bounds():
             guess={"a": 0.0},
             curvefit_kwargs=options,
         )
+
+
+@pytest.mark.parametrize(
+    ("bounds", "initial_values", "expected_values"),
+    [
+        ((2.0, 5.0), [3.0, 0.0, 6.0], [3.0, 3.5, 3.5]),
+        ((2.0, np.inf), [4.0, 0.0, 1.0], [4.0, 3.0, 3.0]),
+        ((-np.inf, 5.0), [3.0, 6.0, 7.0], [3.0, 4.0, 4.0]),
+    ],
+    ids=["finite", "lower_only", "upper_only"],
+)
+def test_curvefit_analysis_adjusts_automatic_guess_per_trace(
+    bounds, initial_values, expected_values
+):
+    """Replace only out-of-bounds automatic guesses."""
+    x = np.linspace(-2.0, 2.0, 41)
+    data = xr.DataArray(
+        np.tile(4.0 * x + 1.0, (3, 1)),
+        coords=[
+            ("trace", ["valid", "invalid_1", "invalid_2"]),
+            ("x", x),
+        ],
+        attrs={"dataset_id": "test"},
+    )
+    initial = xr.DataArray(initial_values, coords=[data.trace])
+    original_initial = initial.copy(deep=True)
+
+    class LineFitWithTraceGuess(LineFit):
+        @classmethod
+        def guess(cls, preprocessed_data, coords):
+            return {"a": initial, "b": 0.0}
+
+    result = LineFitWithTraceGuess.run(
+        data,
+        coords="x",
+        curvefit_kwargs={"bounds": {"a": bounds}},
+    )
+
+    assert result.fit_params_guess is not None
+    expected = xr.DataArray(expected_values, coords=[data.trace])
+    assert_allclose(result.fit_params_guess.a, expected)
+    assert_identical(initial, original_initial)
+
+    assert result.success.all().item()
+    assert_allclose(
+        result.params.a,
+        xr.DataArray([4.0, 4.0, 4.0], coords=[data.trace]),
+    )
+    assert_allclose(
+        result.params.b,
+        xr.DataArray([1.0, 1.0, 1.0], coords=[data.trace]),
+    )
