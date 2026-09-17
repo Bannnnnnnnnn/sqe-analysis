@@ -287,3 +287,44 @@ def test_curvefit_analysis_quadratic():
     assert res.fit_params.a.item() == pytest.approx(2.0)
     assert res.fit_params.b.item() == pytest.approx(3.0)
     assert res.fit_params.c.item() == pytest.approx(1.0)
+
+
+class LineFitWithBounds(LineFit):
+    @classmethod
+    def bounds(cls, preprocessed_data, coords):
+        return {
+            "a": (-10.0, 3.0),
+            "b": (-10.0, 10.0),
+        }
+
+
+@pytest.mark.parametrize(
+    ("curvefit_kwargs", "expected_a"),
+    [
+        ({}, 3.0),
+        ({"bounds": {"a": (-10.0, 5.0)}}, 4.0),
+        ({"bounds": None}, 3.0),
+        ({"bounds": {}}, 3.0),
+        ({"bounds": {"a": (-np.inf, np.inf)}}, 4.0),
+    ],
+    ids=["default", "partial_override", "none", "empty", "unbounded_a"],
+)
+def test_curvefit_analysis_bounds(curvefit_kwargs, expected_a):
+    """Apply parameter-wise overrides while preserving other default bounds."""
+    x = np.linspace(-2.0, 2.0, 41)
+    data = xr.DataArray(
+        4.0 * x + 20.0,
+        coords=[("x", x)],
+        attrs={"dataset_id": "test"},
+    )
+
+    result = LineFitWithBounds.run(
+        data,
+        coords="x",
+        guess={"a": 1.0, "b": 0.0},
+        curvefit_kwargs=curvefit_kwargs,
+    )
+
+    assert result.success.item()
+    assert result.params.a.item() == pytest.approx(expected_a, abs=1e-6)
+    assert result.params.b.item() == pytest.approx(10.0, abs=1e-6)

@@ -66,6 +66,17 @@ The type of initial guess of xr.DataArray.curvefit, mapping from string to float
 or DataArray
 """
 
+CurvefitBoundsType = Mapping[
+    str,
+    tuple[float | xr.DataArray, float | xr.DataArray],
+]
+"""
+Parameter bounds for xr.DataArray.curvefit.
+
+Maps parameter names to pairs of lower and upper bounds. Each bound can
+be a scalar or a DataArray.
+"""
+
 
 class CurvefitAnalysis(BaseAnalysis):
     """
@@ -123,6 +134,27 @@ class CurvefitAnalysis(BaseAnalysis):
         Returns ``None`` if an initial guess is not implemented.
         """
         # TODO: link to xarray docs
+        return None
+
+    @classmethod
+    def bounds(
+        cls,
+        preprocessed_data: xr.DataArray,
+        coords: CurvefitCoordsType,
+    ) -> CurvefitBoundsType | None:
+        """
+        Default parameter bounds for the curve fitting.
+
+        This method is called after preprocessing. The return value maps
+        parameter names to pairs of lower and upper bounds in the format
+        accepted by ``xr.DataArray.curvefit``.
+
+        Bounds supplied through ``curvefit_kwargs`` override these defaults
+        for the corresponding parameters. Passing ``None`` or an empty
+        mapping supplies no overrides.
+
+        Returns ``None`` if no default bounds are defined.
+        """
         return None
 
     @classmethod
@@ -198,6 +230,19 @@ class CurvefitAnalysis(BaseAnalysis):
         if guess_from_func is not None:
             # override from guess provided as argument
             guess = {**guess_from_func, **guess}
+
+        bounds_from_func = cls.bounds(data_to_fit, coords=coords)
+        bounds_from_arg = curvefit_kwargs.get("bounds")
+
+        merged_bounds = {
+            **({} if bounds_from_func is None else bounds_from_func),
+            **({} if bounds_from_arg is None else bounds_from_arg),
+        }
+
+        if merged_bounds:
+            curvefit_kwargs["bounds"] = merged_bounds
+        else:
+            curvefit_kwargs.pop("bounds", None)
 
         fit_result = data_to_fit.curvefit(
             coords=coords,
