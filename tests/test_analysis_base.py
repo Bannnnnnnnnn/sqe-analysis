@@ -7,7 +7,7 @@ from typing import override
 import numpy as np
 import pytest
 import xarray as xr
-from xarray.testing import assert_allclose, assert_identical
+from xarray.testing import assert_allclose
 
 from sqe_analysis.analysis_base import CurvefitAnalysis
 from sqe_analysis.result import CurvefitAnalysisResult
@@ -291,7 +291,7 @@ def test_curvefit_analysis_quadratic():
 
 class LineFitWithBounds(LineFit):
     @classmethod
-    def bounds(cls, preprocessed_data, coords):
+    def bounds(cls):
         return {
             "a": (-10.0, 3.0),
             "b": (-10.0, 10.0),
@@ -299,17 +299,33 @@ class LineFitWithBounds(LineFit):
 
 
 @pytest.mark.parametrize(
-    ("curvefit_kwargs", "expected_a"),
+    ("run_kwargs", "expected_a"),
     [
         ({}, 3.0),
         ({"bounds": {"a": (-10.0, 5.0)}}, 4.0),
         ({"bounds": None}, 3.0),
         ({"bounds": {}}, 3.0),
         ({"bounds": {"a": (-np.inf, np.inf)}}, 4.0),
+        ({"curvefit_kwargs": {"bounds": {"a": (-10.0, 5.0)}}}, 4.0),
+        (
+            {
+                "curvefit_kwargs": {"bounds": {"a": (-10.0, 2.0)}},
+                "bounds": {"a": (-10.0, 5.0)},
+            },
+            4.0,
+        ),
     ],
-    ids=["default", "partial_override", "none", "empty", "unbounded_a"],
+    ids=[
+        "default",
+        "partial_override",
+        "none",
+        "empty",
+        "unbounded_a",
+        "legacy_kwargs",
+        "explicit_priority",
+    ],
 )
-def test_curvefit_analysis_bounds(curvefit_kwargs, expected_a):
+def test_curvefit_analysis_bounds(run_kwargs, expected_a):
     """Apply parameter-wise overrides while preserving other default bounds."""
     x = np.linspace(-2.0, 2.0, 41)
     data = xr.DataArray(
@@ -322,7 +338,7 @@ def test_curvefit_analysis_bounds(curvefit_kwargs, expected_a):
         data,
         coords="x",
         guess={"a": 1.0, "b": 0.0},
-        curvefit_kwargs=curvefit_kwargs,
+        **run_kwargs,
     )
 
     assert result.success.item()
@@ -330,28 +346,20 @@ def test_curvefit_analysis_bounds(curvefit_kwargs, expected_a):
     assert result.params.b.item() == pytest.approx(10.0, abs=1e-6)
 
 
-def test_curvefit_analysis_replaces_out_of_bounds_automatic_guess():
-    """Replace an infeasible automatic guess with an interior value."""
+def test_curvefit_analysis_rejects_out_of_bounds_automatic_guess():
+    """Follow Xarray behavior for infeasible automatic guesses."""
     x = np.linspace(-2.0, 2.0, 41)
     data = xr.DataArray(
         4.0 * x + 1.0,
         coords=[("x", x)],
         attrs={"dataset_id": "test"},
     )
-
-    result = LineFitWithGuess.run(
-        data,
-        coords="x",
-        curvefit_kwargs={"bounds": {"a": (2.0, 5.0)}},
-    )
-
-    assert result.success.item()
-    assert result.params.a.item() == pytest.approx(4.0)
-    assert result.params.b.item() == pytest.approx(1.0)
-
-    assert result.fit_params_guess is not None
-    assert result.fit_params_guess.a.item() == pytest.approx(3.5)
-    assert result.fit_params_guess.b.item() == 0.0
+    with pytest.raises(ValueError):
+        LineFitWithGuess.run(
+            data,
+            coords="x",
+            bounds={"a": (2.0, 5.0)},
+        )
 
 
 def test_curvefit_analysis_preserves_manual_guess_with_bounds():
@@ -362,13 +370,13 @@ def test_curvefit_analysis_preserves_manual_guess_with_bounds():
         coords=[("x", x)],
         attrs={"dataset_id": "test"},
     )
-    options = {"bounds": {"a": (2.0, 5.0)}}
+    bounds = {"a": (2.0, 5.0)}
 
     result = LineFitWithGuess.run(
         data,
         coords="x",
         guess={"a": 3.0},
-        curvefit_kwargs=options,
+        bounds=bounds,
     )
 
     assert result.success.item()
@@ -380,57 +388,5 @@ def test_curvefit_analysis_preserves_manual_guess_with_bounds():
             data,
             coords="x",
             guess={"a": 0.0},
-            curvefit_kwargs=options,
+            bounds=bounds,
         )
-
-
-@pytest.mark.parametrize(
-    ("bounds", "initial_values", "expected_values"),
-    [
-        ((2.0, 5.0), [3.0, 0.0, 6.0], [3.0, 3.5, 3.5]),
-        ((2.0, np.inf), [4.0, 0.0, 1.0], [4.0, 3.0, 3.0]),
-        ((-np.inf, 5.0), [3.0, 6.0, 7.0], [3.0, 4.0, 4.0]),
-    ],
-    ids=["finite", "lower_only", "upper_only"],
-)
-def test_curvefit_analysis_adjusts_automatic_guess_per_trace(
-    bounds, initial_values, expected_values
-):
-    """Replace only out-of-bounds automatic guesses."""
-    x = np.linspace(-2.0, 2.0, 41)
-    data = xr.DataArray(
-        np.tile(4.0 * x + 1.0, (3, 1)),
-        coords=[
-            ("trace", ["valid", "invalid_1", "invalid_2"]),
-            ("x", x),
-        ],
-        attrs={"dataset_id": "test"},
-    )
-    initial = xr.DataArray(initial_values, coords=[data.trace])
-    original_initial = initial.copy(deep=True)
-
-    class LineFitWithTraceGuess(LineFit):
-        @classmethod
-        def guess(cls, preprocessed_data, coords):
-            return {"a": initial, "b": 0.0}
-
-    result = LineFitWithTraceGuess.run(
-        data,
-        coords="x",
-        curvefit_kwargs={"bounds": {"a": bounds}},
-    )
-
-    assert result.fit_params_guess is not None
-    expected = xr.DataArray(expected_values, coords=[data.trace])
-    assert_allclose(result.fit_params_guess.a, expected)
-    assert_identical(initial, original_initial)
-
-    assert result.success.all().item()
-    assert_allclose(
-        result.params.a,
-        xr.DataArray([4.0, 4.0, 4.0], coords=[data.trace]),
-    )
-    assert_allclose(
-        result.params.b,
-        xr.DataArray([1.0, 1.0, 1.0], coords=[data.trace]),
-    )

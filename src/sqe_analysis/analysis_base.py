@@ -7,7 +7,6 @@ For concrete classes implementing the analysis, see the
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
-from math import inf
 from typing import Any, cast, override
 
 import xarray as xr
@@ -87,10 +86,9 @@ class CurvefitAnalysis(BaseAnalysis):
     :py:meth:`func`. The :py:meth:`run` method has a default implementation that
     performs fitting to ``func`` using ``xr.DataArray.curvefit`` and returns a
     :py:class:`~sqe_analysis.result.CurvefitAnalysisResult`. Additionally, a
-    subclass may implement two functions that will be called by ``run``:
-    :py:meth:`guess`, which produces an initial guess, and
-    :py:meth:`preprocess`, which can apply simple transformations to the data
-    before fitting.
+    subclass may implement :py:meth:`guess` for initial values,
+    :py:meth:`bounds` for default parameter bounds, and
+    :py:meth:`preprocess` for simple transformations before fitting.
 
     This class should only be used for the cases where the analysis truly
     consists of a single curve fit. If you need to perform multiple curve fits
@@ -138,23 +136,14 @@ class CurvefitAnalysis(BaseAnalysis):
         return None
 
     @classmethod
-    def bounds(
-        cls,
-        preprocessed_data: xr.DataArray,
-        coords: CurvefitCoordsType,
-    ) -> CurvefitBoundsType | None:
+    def bounds(cls) -> CurvefitBoundsType | None:
         """
-        Default parameter bounds for the curve fitting.
+        Default parameter bounds for curve fitting.
 
-        This method is called after preprocessing. The return value maps
-        parameter names to pairs of lower and upper bounds in the format
-        accepted by ``xr.DataArray.curvefit``.
+        Returns a mapping from parameter names to (lower, upper) bounds.
+        Bounds given to `run()` override the defaults for those parameters.
 
-        Bounds supplied through ``curvefit_kwargs`` override these defaults
-        for the corresponding parameters. Passing ``None`` or an empty
-        mapping supplies no overrides.
-
-        Returns ``None`` if no default bounds are defined.
+        Returns `None` if no default bounds are defined.
         """
         return None
 
@@ -190,6 +179,8 @@ class CurvefitAnalysis(BaseAnalysis):
         coords: CurvefitCoordsType,
         guess: CurvefitGuessType | None = None,
         curvefit_kwargs: dict[str, Any] | None = None,
+        *,
+        bounds: CurvefitBoundsType | None = None,
     ) -> CurvefitAnalysisResult:
         """
         Analyze data by performing curve fitting.
@@ -197,10 +188,9 @@ class CurvefitAnalysis(BaseAnalysis):
         This is a thin wrapper around the `Xarray curvefit <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.curvefit.html>`__
         function.
 
-        Automatic initial guesses outside the effective bounds are replaced individually.
-        Values within the bounds are kept. If both bounds are finite, the midpoint is used.
-        If only one bound is finite, lower + 1 or upper - 1 is used. Explicit guesses are
-        used as given.
+        Initial guesses are passed to xarray after merging automatic and explicit
+        guesses. If an initial guess is outside the effective bounds, a ValueError
+        is raised, as in xarray and SciPy.
 
         Args:
             data: Data to analyze
@@ -208,6 +198,15 @@ class CurvefitAnalysis(BaseAnalysis):
             guess: Parameter values for initial guess. These will override any
                 parameters returned by :py:meth:`guess`.
             curvefit_kwargs: Keyword arguments passed to `xr.DataArray.curvefit`.
+                Bounds given here override the defaults from :py:meth:`bounds`,
+                but are overridden by `bounds` for the same parameters.
+            bounds: Parameter bounds overriding :py:meth:`bounds and bounds in
+                `curvefit_kwargs` for the specified parameters. `None` or an empty
+                mapping gives no overrides. use `(-np.inf, np.inf)` to remove the
+                bounds for a parameter.
+
+        Raises:
+            ValueError: If an initial guess is outside the effective bounds.
         """
         # TODO: automatically determine coords? longest dim? and separate subclass for 2D fit with 2 longest coords?
 
@@ -232,54 +231,23 @@ class CurvefitAnalysis(BaseAnalysis):
             data_to_fit = data
 
         guess_from_func = cls.guess(data_to_fit, coords=coords)
+        if guess_from_func is not None:
+            guess = {**guess_from_func, **guess}
 
-        bounds_from_func = cls.bounds(data_to_fit, coords=coords)
-        bounds_from_arg = curvefit_kwargs.get("bounds")
-
+        bounds_from_func = cls.bounds()
+        bounds_from_kwargs = curvefit_kwargs.pop("bounds", None)
         merged_bounds = {
-            **({} if bounds_from_func is None else bounds_from_func),
-            **({} if bounds_from_arg is None else bounds_from_arg),
+            **(bounds_from_func or {}),
+            **(bounds_from_kwargs or {}),
+            **(bounds or {}),
         }
 
-        if merged_bounds:
-            curvefit_kwargs["bounds"] = merged_bounds
-        else:
-            curvefit_kwargs.pop("bounds", None)
-
-        if guess_from_func is not None:
-            automatic_guess = dict(guess_from_func)
-
-            for name, (lower, upper) in merged_bounds.items():
-                if name in guess or name not in automatic_guess:
-                    continue
-
-                initial, lower, upper = xr.align(
-                    xr.DataArray(automatic_guess[name]),
-                    xr.DataArray(lower),
-                    xr.DataArray(upper),
-                    join="exact",
-                    copy=False,
-                )
-
-                outside = (initial < lower) | (initial > upper)
-                if not outside.any():
-                    continue
-
-                has_lower = lower != -inf
-                has_upper = upper != inf
-
-                fallback = lower.where(has_lower, 0) / 2 + upper.where(has_upper, 0) / 2
-                fallback = fallback.where(has_lower, upper - 1)
-                fallback = fallback.where(has_upper, lower + 1)
-
-                automatic_guess[name] = xr.where(outside, fallback, initial)
-
-            guess = {**automatic_guess, **guess}
-
+        # TODO: Consider clipping initial guesses to be within bounds.
         fit_result = data_to_fit.curvefit(
             coords=coords,
             func=cls.func,
             p0=guess,
+            bounds=merged_bounds,
             **curvefit_kwargs,
         )
 
