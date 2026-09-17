@@ -197,10 +197,10 @@ class CurvefitAnalysis(BaseAnalysis):
         This is a thin wrapper around the `Xarray curvefit <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.curvefit.html>`__
         function.
 
-        Automatic initial guesses that are outside the effective bounds are not used,
-        so xarray initializes those parameters instead. For a DataArray guess, if any
-        element is out of bounds, the automatic guess for that parameter is not used.
-        Explicit guesses are used as given.
+        Automatic initial guesses outside the effective bounds are replaced individually.
+        Values within the bounds are kept. If both bounds are finite, the midpoint is used.
+        If only one bound is finite, lower + 1 or upper - 1 is used. Explicit guesses are
+        used as given.
 
         Args:
             data: Data to analyze
