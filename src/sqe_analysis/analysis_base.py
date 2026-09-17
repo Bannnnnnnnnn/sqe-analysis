@@ -200,7 +200,7 @@ class CurvefitAnalysis(BaseAnalysis):
             curvefit_kwargs: Keyword arguments passed to `xr.DataArray.curvefit`.
                 Bounds given here override the defaults from :py:meth:`bounds`,
                 but are overridden by `bounds` for the same parameters.
-            bounds: Parameter bounds overriding :py:meth:`bounds and bounds in
+            bounds: Parameter bounds overriding :py:meth:`bounds` and bounds in
                 `curvefit_kwargs` for the specified parameters. `None` or an empty
                 mapping gives no overrides. use `(-np.inf, np.inf)` to remove the
                 bounds for a parameter.
