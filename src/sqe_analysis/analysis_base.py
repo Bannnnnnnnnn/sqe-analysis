@@ -196,6 +196,11 @@ class CurvefitAnalysis(BaseAnalysis):
         This is a thin wrapper around the `Xarray curvefit <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.curvefit.html>`__
         function.
 
+        Automatic initial guesses that are outside the effective bounds are not used,
+        so xarray initializes those parameters instead. For a DataArray guess, if any
+        element is out of bounds, the automatic guess for that parameter is not used.
+        Explicit guesses are used as given.
+
         Args:
             data: Data to analyze
             coords: Coordinate(s) of the data along which to perform curve fitting.
@@ -226,9 +231,6 @@ class CurvefitAnalysis(BaseAnalysis):
             data_to_fit = data
 
         guess_from_func = cls.guess(data_to_fit, coords=coords)
-        if guess_from_func is not None:
-            # override from guess provided as argument
-            guess = {**guess_from_func, **guess}
 
         bounds_from_func = cls.bounds(data_to_fit, coords=coords)
         bounds_from_arg = curvefit_kwargs.get("bounds")
@@ -242,6 +244,26 @@ class CurvefitAnalysis(BaseAnalysis):
             curvefit_kwargs["bounds"] = merged_bounds
         else:
             curvefit_kwargs.pop("bounds", None)
+
+        if guess_from_func is not None:
+            automatic_guess = dict(guess_from_func)
+
+            for name, (lower, upper) in merged_bounds.items():
+                if name in guess or name not in automatic_guess:
+                    continue
+
+                initial, lower, upper = xr.align(
+                    xr.DataArray(automatic_guess[name]),
+                    xr.DataArray(lower),
+                    xr.DataArray(upper),
+                    join="exact",
+                    copy=False,
+                )
+
+                if ((initial < lower) | (initial > upper)).any():
+                    del automatic_guess[name]
+
+            guess = {**automatic_guess, **guess}
 
         fit_result = data_to_fit.curvefit(
             coords=coords,

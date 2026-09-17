@@ -328,3 +328,57 @@ def test_curvefit_analysis_bounds(curvefit_kwargs, expected_a):
     assert result.success.item()
     assert result.params.a.item() == pytest.approx(expected_a, abs=1e-6)
     assert result.params.b.item() == pytest.approx(10.0, abs=1e-6)
+
+
+def test_curvefit_analysis_discards_out_of_bounds_automatic_guess():
+    """Let Xarray initialize parameters with infeasible automatic guesses."""
+    x = np.linspace(-2.0, 2.0, 41)
+    data = xr.DataArray(
+        4.0 * x + 1.0,
+        coords=[("x", x)],
+        attrs={"dataset_id": "test"},
+    )
+
+    result = LineFitWithGuess.run(
+        data,
+        coords="x",
+        curvefit_kwargs={"bounds": {"a": (2.0, 5.0)}},
+    )
+
+    assert result.success.item()
+    assert result.params.a.item() == pytest.approx(4.0)
+    assert result.params.b.item() == pytest.approx(1.0)
+
+    assert result.fit_params_guess is not None
+    assert "a" not in result.fit_params_guess
+    assert result.fit_params_guess.b.item() == 0.0
+
+
+def test_curvefit_analysis_preserves_manual_guess_with_bounds():
+    """Preserve explicit guesses, including invalid ones."""
+    x = np.linspace(-2.0, 2.0, 41)
+    data = xr.DataArray(
+        4.0 * x + 1.0,
+        coords=[("x", x)],
+        attrs={"dataset_id": "test"},
+    )
+    options = {"bounds": {"a": (2.0, 5.0)}}
+
+    result = LineFitWithGuess.run(
+        data,
+        coords="x",
+        guess={"a": 3.0},
+        curvefit_kwargs=options,
+    )
+
+    assert result.success.item()
+    assert result.params.a.item() == pytest.approx(4.0)
+    assert result.fit_params_guess.a.item() == 3.0
+
+    with pytest.raises(ValueError):
+        LineFitWithGuess.run(
+            data,
+            coords="x",
+            guess={"a": 0.0},
+            curvefit_kwargs=options,
+        )
