@@ -306,14 +306,6 @@ class LineFitWithBounds(LineFit):
         ({"bounds": None}, 3.0),
         ({"bounds": {}}, 3.0),
         ({"bounds": {"a": (-np.inf, np.inf)}}, 4.0),
-        ({"curvefit_kwargs": {"bounds": {"a": (-10.0, 5.0)}}}, 4.0),
-        (
-            {
-                "curvefit_kwargs": {"bounds": {"a": (-10.0, 2.0)}},
-                "bounds": {"a": (-10.0, 5.0)},
-            },
-            4.0,
-        ),
     ],
     ids=[
         "default",
@@ -321,8 +313,6 @@ class LineFitWithBounds(LineFit):
         "none",
         "empty",
         "unbounded_a",
-        "legacy_kwargs",
-        "explicit_priority",
     ],
 )
 def test_curvefit_analysis_bounds(run_kwargs, expected_a):
@@ -347,7 +337,7 @@ def test_curvefit_analysis_bounds(run_kwargs, expected_a):
 
 
 def test_curvefit_analysis_rejects_out_of_bounds_automatic_guess():
-    """Follow Xarray behavior for infeasible automatic guesses."""
+    """Follow Xarray behavior of raising an error for infeasible automatic guesses."""
     x = np.linspace(-2.0, 2.0, 41)
     data = xr.DataArray(
         4.0 * x + 1.0,

@@ -140,10 +140,10 @@ class CurvefitAnalysis(BaseAnalysis):
         """
         Default parameter bounds for curve fitting.
 
-        Returns a mapping from parameter names to (lower, upper) bounds.
-        Bounds given to `run()` override the defaults for those parameters.
+        Returns a mapping from parameter names to tuples of ``(lower, upper)`` bounds,
+        in the same format as the ``bounds`` parameter of ``xr.DataArray.curvefit``.
 
-        Returns `None` if no default bounds are defined.
+        Returns ``None`` if no default bounds are defined.
         """
         return None
 
@@ -178,9 +178,8 @@ class CurvefitAnalysis(BaseAnalysis):
         data: xr.DataArray,
         coords: CurvefitCoordsType,
         guess: CurvefitGuessType | None = None,
-        curvefit_kwargs: dict[str, Any] | None = None,
-        *,
         bounds: CurvefitBoundsType | None = None,
+        curvefit_kwargs: dict[str, Any] | None = None,
     ) -> CurvefitAnalysisResult:
         """
         Analyze data by performing curve fitting.
@@ -198,12 +197,9 @@ class CurvefitAnalysis(BaseAnalysis):
             guess: Parameter values for initial guess. These will override any
                 parameters returned by :py:meth:`guess`.
             curvefit_kwargs: Keyword arguments passed to `xr.DataArray.curvefit`.
-                Bounds given here override the defaults from :py:meth:`bounds`,
-                but are overridden by `bounds` for the same parameters.
-            bounds: Parameter bounds overriding :py:meth:`bounds` and bounds in
-                `curvefit_kwargs` for the specified parameters. `None` or an empty
-                mapping gives no overrides. use `(-np.inf, np.inf)` to remove the
-                bounds for a parameter.
+            bounds: Parameter bounds overriding the output of :py:meth:`bounds` for
+                the specified parameters. ``None`` or an empty mapping gives no overrides.
+                Use ``(-np.inf, np.inf)`` to remove the bounds for a parameter.
 
         Raises:
             ValueError: If an initial guess is outside the effective bounds.
@@ -235,10 +231,8 @@ class CurvefitAnalysis(BaseAnalysis):
             guess = {**guess_from_func, **guess}
 
         bounds_from_func = cls.bounds()
-        bounds_from_kwargs = curvefit_kwargs.pop("bounds", None)
         merged_bounds = {
             **(bounds_from_func or {}),
-            **(bounds_from_kwargs or {}),
             **(bounds or {}),
         }
 
