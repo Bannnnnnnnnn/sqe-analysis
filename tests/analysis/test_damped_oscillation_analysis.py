@@ -8,6 +8,7 @@ import xarray as xr
 from xarray.testing import assert_allclose, assert_identical
 
 from sqe_analysis.analysis import DampedOscillationAnalysis
+from sqe_analysis.example_data import open_dataset
 from sqe_analysis.signal_processing import project_complex
 
 
@@ -844,3 +845,40 @@ def test_damped_oscillation_analysis_nonuniform_time_requires_complete_guess(
 
     assert_identical(data, original_data)
     assert guess == original_guess
+
+def test_damped_oscillation_analysis_ramsey_good_snr():
+    """Fit real Ramsey data before and after removing the first three points."""
+    ds = open_dataset(
+        "ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63"
+    )
+    dim = "idle_time"
+    assert ds[dim].attrs["units"] == "ns"
+    data = ds.Q22.assign_attrs(dataset_id=ds.source)
+
+    results = []
+    for first_sample in (0, 3):
+        trace = data.isel({dim: slice(first_sample, None)})
+        result = DampedOscillationAnalysis.run(trace, coords=dim)
+
+        assert  result.success.item()
+        projected = result.intermediate_results.preprocessed_data
+        fitted = DampedOscillationAnalysis.func(
+            projected[dim], **result.fit_params
+        )
+        residual = fitted - projected
+        normalized_rms = np.sqrt((residual**2).mean() / projected.var())
+
+        # Both windows give about 0.13; allow some variation in the fit.
+        assert normalized_rms.item() < 0.2
+        results.append(result)
+
+    full, cropped = results
+
+    # Regression resferences from inspected fits, not experimental ground truth.
+    # Time is in ns, so f is in cycle/ns and tau is in ns.
+    assert full.params.f.item() == pytest.approx(
+        full.params.f.item(), rel=1e-3, abs=0
+    )
+    assert cropped.params.tau.item() == pytest.approx(
+        full.params.tau.item(), rel=0.05, abs=0
+    )
