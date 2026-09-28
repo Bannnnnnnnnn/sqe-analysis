@@ -3,7 +3,6 @@ The main API of the library
 
 The analysis classes are ordered alphabetically, for lack of better organization.
 """
-
 from typing import Any, cast, override
 
 import numpy as np
@@ -14,6 +13,7 @@ from xarray.core.types import Dims
 from sqe_analysis.analysis_base import (
     BaseAnalysis,
     CurvefitAnalysis,
+    CurvefitBoundsType,
     CurvefitCoordsType,
     CurvefitGuessType,
 )
@@ -154,11 +154,17 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
     @classmethod
     @override
+    def bounds(cls) -> CurvefitBoundsType:
+        return {"tau": (0, np.inf)}
+
+    @classmethod
+    @override
     def run(
         cls,
         data: xr.DataArray,
         coords: CurvefitCoordsType,
         guess: CurvefitGuessType | None = None,
+        bounds: CurvefitBoundsType | None = None,
         curvefit_kwargs: dict[str, Any] | None = None,
     ) -> CurvefitAnalysisResult:
         """
@@ -186,6 +192,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             data: Data to analyze.
             coords: Coordinate(s) along which to perform curve fitting.
             guess: Initial parameter values overriding automatic guesses.
+            bounds: Parameter bounds overriding the defaults for specified parameters.
             curvefit_kwargs: Keyword arguments passed to Xarray curvefit.
 
         Returns:
@@ -197,10 +204,6 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
                 missing for non-increasing or nonuniform coordinates.
         """
         options = {} if curvefit_kwargs is None else dict(curvefit_kwargs)
-
-        bounds = dict(options.get("bounds") or {})
-        bounds.setdefault("tau", (0, np.inf))
-        options["bounds"] = bounds
 
         scipy_kwargs = dict(options.get("kwargs") or {})
         if scipy_kwargs.get("method") is None:
@@ -247,7 +250,8 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             automatic_guess = cls.guess(data_to_guess, coords=coords)
 
             if automatic_guess is not None:
-                for name, (lower, upper) in bounds.items():
+                effective_bounds = {**cls.bounds(), **(bounds or {})}
+                for name, (lower, upper) in effective_bounds.items():
                     if name in prepared_guess or name not in automatic_guess:
                         continue
 
@@ -263,6 +267,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             data,
             coords=coords,
             guess=prepared_guess,
+            bounds=bounds,
             curvefit_kwargs=options,
         )
 
