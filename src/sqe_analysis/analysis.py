@@ -36,31 +36,19 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         b + a \cdot \exp(-x / \tau) \cdot \cos\left(2\pi (f x + \phi)\right)
 
-    to real-valued data. Complex readout IQ is projected to the real axis
-    using :py:func:`~sqe_analysis.signal_processing.project_complex`
-    in :py:meth:`preprocess`.
+    to real-valued data. Complex readout IQ is centered and projected to the
+    real axis with :py:func:`~sqe_analysis.signal_processing.project_complex`.
+    For complex input, ``a``, ``b``b, and ``phi`` describe the projected signal;
+    the projection may reverse its sign. Real-valued input is not preprocessed.
 
-    For supported inputs, :py:meth:`guess` estimates initial values for all
-    model parameters. Values supplied through the ``guess`` argument of
-    :py:meth:`run` override these estimates.
-
-    For complex input, ``a``, ``b``, and ``phi`` describe the projected
-    signal. The projection subtracts the complex mean and may reverse
-    the signal's sign.
-
-    The decay time ``tau`` has the same units as ``x``, and the frequency ``f``
-    has the inverse units of ``x``. Note that the phase ``phi`` is in *turns*.
+    The decay time ``tau`` has the same units as ``x``, the frequency ``f``
+    has the inverse units of ``x``, and the phase ``phi`` is in *turns*.
     """
 
     @classmethod
     @override
     def func(cls, x: ArrayLike, a, b, tau, f, phi) -> ArrayLike:
         return b + a * np.exp(-x / tau) * np.cos(2 * np.pi * (f * x + phi))
-
-    @staticmethod
-    def _has_uniform_steps(steps: np.ndarray) -> bool:
-        """Check uniform spacing for a nonempty array of time steps."""
-        return bool(np.allclose(steps, steps[0], rtol=1e-6, atol=0))
 
     @classmethod
     @override
@@ -70,59 +58,30 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         coords: CurvefitCoordsType,
     ) -> CurvefitGuessType | None:
         """
-        Crude initial guesses for damped oscillation parameters
+        Estimate initial parameter from the positive-frequency FFT peak.
 
-        Supports real data with a named, one-dimensional, increasing,
-        uniformly spaced numeric coordinate. Each trace must contain
-        either only finite values or only NaN values.
-
-        For finite, nonconstant traces, frequency is estimated using
-        the FFT. The initial decay time is half the coordinate span.
-        Amplitude, offset, and phase are estimated by linear least
-        squares.
-
-        Constant traces use zero amplitude and their constant value as
-        the baseline. Their remaining initial values are numerical
-        placeholders. The run method marks these traces as unsuccessful.
-
-        All-NaN traces have NaN guesses for amplitude, offset, frequency,
-        and phase. The provisional decay time is shared across traces
-        and depends only on the coordinate.
-
-        Returns None for unsupported coordinates, partially missing
-        traces, or traces containing infinity.
+        Requires finite signal values on a named, increasing, uniformly spaced
+        numeric dimension with at least three samples. Return None for other
+        coordinate specifications, unsupported spacing, or too few samples.
+        The decay time is approximated by half the observation span; the mean
+        and the FFT peak give the baseline, amplitude, and phase estimates.
         """
         y = preprocessed_data
-        if not isinstance(coords, str):
+        if not isinstance(coords, str) or coords not in y.dims:
             return None
 
         x = y[coords]
-        if x.ndim != 1 or x.size < 3:
+        if x.size < 3:
             return None
 
-        dim = x.dims[0]
-
-        time = x.to_numpy().astype(float)
-        if not np.isfinite(time).all():
-            return None
-
-        finite_trace = np.isfinite(y).all(dim)
-        all_nan_trace = y.isnull().all(dim)
-        if not (finite_trace | all_nan_trace).all():
-            return None
-
-        steps = np.diff(time)
-        if steps[0] <= 0 or not cls._has_uniform_steps(steps):
-            # TODO: if we need it, consider adding guess for frequency even with
-            # non-uniform step using e.g.
+        steps = x.diff(coords)
+        if steps[0] <= 0 or not np.allclose(steps, steps[0], rtol=1e-6, atol=0):
+            # TODO: if we need it, estimate frequency on nonuniform coordinates with
             # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lombscargle.html
             return None
 
-        # use non-default frequency_dim_name so that we don't conflict with a
-        # possible dimension named 'frequency' on the data
+        # Avoid a collision with a possible input dimension named 'frequency'.
         spec = simple_dft(y, coords, frequency_dim_name="_f")
-        # Select only positive frequencies (because we're not using rfft) -
-        # exclude the DC component too
         spec = spec.where(spec._f > 0, drop=True)
 
         # use argmax with skipna=False + isel instead of idxmax + sel, so that NaNs are handled correctly
@@ -131,18 +90,14 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         peak = spec.isel(_f=peak_idx).drop_vars("_f")
         peak_freq = spec._f.isel(_f=peak_idx).drop_vars("_f")
 
-        # TODO: consider better guess for tau based on peak width
-        tau = float((time[-1] - time[0]) / 2)
+        first_time = x.isel({coords: 0}, drop=True)
+        tau = (x.isel({coords: -1}, drop=True) - first_time) / 2
         baseline = y.mean(coords)
         # divide by envelope mean to account for the reduced amplitude due to the decay
         amplitude = 2 * abs(peak) / (x.size * np.exp(-x / tau).mean())
-        # FFT phase is relative to the first sample at t0, where the model phase
-        # is f*t0 + phi (in turns). Convert the FFT phase from radians to turns,
-        # then subtract f*t0.
-        phase = (
-            np.arctan2(peak.imag, peak.real) / (2 * np.pi)
-            - peak_freq * x.isel({dim: 0}, drop=True)
-        )
+        # FFT phase is relative to the first sample, where the model phase is
+        # f*t0 + phi in turns. Convert radians to turns, then subtract f*t0
+        phase = np.arctan2(peak.imag, peak.real) / (2 * np.pi) - peak_freq * first_time
 
         return {
             "a": amplitude,
@@ -170,23 +125,9 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         """
         Fit damped oscillations with default decay-time bounds.
 
-        The default bounds for ``tau`` are ``(0, np.inf)``.
-        Explicitly supplied bounds override this default.
-
-        The default optimization method is ``trf``. For ``trf`` and
-        ``dogbox``, parameter scaling defaults to ``x_scale="jac"``.
-
-        For a named one-dimensional coordinate, constant input traces are
-        marked as unsuccessful. Their entries in ``params`` and
-        ``fit_params`` are replaced by NaN.
-
-        A named one-dimensional coordinate must contain only finite
-        values, even when ``skipna=True`` is supplied.
-
-        Named one-dimensional coordinates that are not strictly
-        increasing or not uniformly spaced require explicit initial
-        values for all five parameters. Fitting preserves the original
-        sample order.
+        Defaults to ``trf`` with ``x_scale="jac"``. User-supplied optimizer options
+        override these defaults. The default remains ``trf`` even if bounds are removed.
+        Fitting and result construction follow the base class.
 
         Args:
             data: Data to analyze.
@@ -197,14 +138,8 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         Returns:
             The curve-fitting analysis result.
-
-        Raises:
-            ValueError: If a named one-dimensional coordinate contains
-                NaN or infinity, or if complete initial values are
-                missing for non-increasing or nonuniform coordinates.
         """
-        options = {} if curvefit_kwargs is None else dict(curvefit_kwargs)
-
+        options = dict(curvefit_kwargs or {})
         scipy_kwargs = dict(options.get("kwargs") or {})
         if scipy_kwargs.get("method") is None:
             scipy_kwargs["method"] = "trf"
@@ -212,69 +147,13 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             scipy_kwargs.setdefault("x_scale", "jac")
         options["kwargs"] = scipy_kwargs
 
-        constant = None
-        if isinstance(coords, str):
-            coordinate = data[coords]
-            if coordinate.ndim == 1 and coordinate.size > 0:
-                if not np.isfinite(coordinate).all():
-                    raise ValueError(
-                        "Time coordinates must contain only finite values."
-                    )
-                time = coordinate.to_numpy()
-                manual_guess_reason = None
-
-                if np.any(time[1:] <= time[:-1]):
-                    manual_guess_reason = "Non-increasing"
-                elif time.size >= 3:
-                    steps = np.diff(time.astype(float))
-                    if not cls._has_uniform_steps(steps):
-                        manual_guess_reason = "Nonuniform"
-
-                if manual_guess_reason is not None:
-                    required = {"a", "b", "tau", "f", "phi"}
-                    if guess is None or not required.issubset(guess):
-                        raise ValueError(
-                            f"{manual_guess_reason} time coordinates require initial "
-                            "guesses for a, b, tau, f, and phi."
-                        )
-
-                dim = coordinate.dims[0]
-                first = data.isel({dim: 0}, drop=True)
-                constant = (data == first).all(dim)
-
-        prepared_guess = {} if guess is None else dict(guess)
-
-        if constant is not None and constant.any():
-            preprocessed = cls.preprocess(data, coords=coords)
-            data_to_guess = data if preprocessed is None else preprocessed
-            automatic_guess = cls.guess(data_to_guess, coords=coords)
-
-            if automatic_guess is not None:
-                effective_bounds = {**cls.bounds(), **(bounds or {})}
-                for name, (lower, upper) in effective_bounds.items():
-                    if name in prepared_guess or name not in automatic_guess:
-                        continue
-
-                    initial = automatic_guess[name]
-                    bounded = np.minimum(np.maximum(initial, lower), upper)
-                    prepared_guess[name] = xr.where(
-                        constant,
-                        bounded,
-                        initial,
-                    )
-
         result = super().run(
             data,
             coords=coords,
-            guess=prepared_guess,
+            guess=guess,
             bounds=bounds,
             curvefit_kwargs=options,
         )
-
-        if constant is not None:
-            result.success = result.success & ~constant
-            result.params = result.params.where(~constant)
-            result.fit_params = result.fit_params.where(~constant)
 
         return result
 
