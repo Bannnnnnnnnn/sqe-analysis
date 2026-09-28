@@ -38,7 +38,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
     to real-valued data. Complex readout IQ is centered and projected to the
     real axis with :py:func:`~sqe_analysis.signal_processing.project_complex`.
-    For complex input, ``a``, ``b``b, and ``phi`` describe the projected signal;
+    For complex input, ``a``, ``b``, and ``phi`` describe the projected signal;
     the projection may reverse its sign. Real-valued input is not preprocessed.
 
     The decay time ``tau`` has the same units as ``x``, the frequency ``f``
@@ -58,13 +58,13 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         coords: CurvefitCoordsType,
     ) -> CurvefitGuessType | None:
         """
-        Estimate initial parameter from the positive-frequency FFT peak.
+        Crude initial guesses for damped oscillation parameters.
 
-        Requires finite signal values on a named, increasing, uniformly spaced
-        numeric dimension with at least three samples. Return None for other
-        coordinate specifications, unsupported spacing, or too few samples.
-        The decay time is approximated by half the observation span; the mean
-        and the FFT peak give the baseline, amplitude, and phase estimates.
+        Automatic guesses use a named, increasing, uniformly spaced dimension
+        coordinate. Return ``None`` for unsupported coordinates or fewer than
+        three samples.
+
+        Partially missing traces need finite manual guesses.
         """
         y = preprocessed_data
         if not isinstance(coords, str) or coords not in y.dims:
@@ -84,9 +84,9 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         spec = simple_dft(y, coords, frequency_dim_name="_f")
         spec = spec.where(spec._f > 0, drop=True)
 
-        # use argmax with skipna=False + isel instead of idxmax + sel, so that NaNs are handled correctly
+        # Keep all-NaN traces from aborting peak selection for valid neighbors.
         peak_idx = abs(spec).argmax("_f", skipna=False)
-        # drop_vars so that the extra '_f' dimension is not in the result
+        # Drop the selected FFT frequency coordinate from the guesses.
         peak = spec.isel(_f=peak_idx).drop_vars("_f")
         peak_freq = spec._f.isel(_f=peak_idx).drop_vars("_f")
 
@@ -123,21 +123,11 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         curvefit_kwargs: dict[str, Any] | None = None,
     ) -> CurvefitAnalysisResult:
         """
-        Fit damped oscillations with default decay-time bounds.
+        Fit with parameter scaling for frequency and decay time.
 
         Defaults to ``trf`` with ``x_scale="jac"``. User-supplied optimizer options
         override these defaults. The default remains ``trf`` even if bounds are removed.
         Fitting and result construction follow the base class.
-
-        Args:
-            data: Data to analyze.
-            coords: Coordinate(s) along which to perform curve fitting.
-            guess: Initial parameter values overriding automatic guesses.
-            bounds: Parameter bounds overriding the defaults for specified parameters.
-            curvefit_kwargs: Keyword arguments passed to Xarray curvefit.
-
-        Returns:
-            The curve-fitting analysis result.
         """
         options = dict(curvefit_kwargs or {})
         scipy_kwargs = dict(options.get("kwargs") or {})
@@ -147,15 +137,13 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
             scipy_kwargs.setdefault("x_scale", "jac")
         options["kwargs"] = scipy_kwargs
 
-        result = super().run(
+        return super().run(
             data,
             coords=coords,
             guess=guess,
             bounds=bounds,
             curvefit_kwargs=options,
         )
-
-        return result
 
     @classmethod
     @override
