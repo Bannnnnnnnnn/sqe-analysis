@@ -229,14 +229,13 @@ def test_damped_oscillation_analysis_positive_tau_bounds(time_unit, time_scale):
     )
     data.idle_time.attrs["units"] = time_unit
 
-    curvefit_kwargs = {
-        "bounds": {"tau": (0, np.inf)},
-        "kwargs": {"x_scale": "jac"},
-    }
+    bounds = {"tau": (0, np.inf)}
+    curvefit_kwargs = {"kwargs": {"x_scale": "jac"}}
 
     result = DampedOscillationAnalysis.run(
         data,
         coords="idle_time",
+        bounds=bounds,
         curvefit_kwargs=curvefit_kwargs,
     )
 
@@ -262,6 +261,7 @@ def test_damped_oscillation_analysis_positive_tau_bounds(time_unit, time_scale):
             data,
             coords="idle_time",
             guess={"tau": -12e-6 * time_scale},
+            bounds=bounds,
             curvefit_kwargs=curvefit_kwargs,
         )
 
@@ -496,15 +496,13 @@ def test_damped_oscillation_analysis_constant_trace_does_not_affect_signal(
     data.idle_time.attrs["units"] = "us"
     original_data = data.copy(deep=True)
 
-    curvefit_kwargs = {}
-    if bounded_frequency:
-        curvefit_kwargs["bounds"] = {"f": (0.3, 0.5)}
+    bounds = {"f": (0.3, 0.5)} if bounded_frequency else {}
 
     # Analyze both traces together, without manual initial guesses.
     result = DampedOscillationAnalysis.run(
         data,
         coords="idle_time",
-        curvefit_kwargs=curvefit_kwargs,
+        bounds=bounds,
     )
 
     # Automatic guesses must remain available for the valid trace.
@@ -548,17 +546,17 @@ def test_damped_oscillation_analysis_constant_trace_does_not_affect_signal(
     assert_identical(data, original_data)
 
     if bounded_frequency:
-        assert curvefit_kwargs == {"bounds": {"f": (0.3, 0.5)}}
+        assert bounds == {"f": (0.3, 0.5)}
 
         with pytest.raises(ValueError, match="bounds"):
             DampedOscillationAnalysis.run(
                 data,
                 coords="idle_time",
                 guess={"f": 0.2},
-                curvefit_kwargs=curvefit_kwargs,
+                bounds=bounds,
             )
     else:
-        assert curvefit_kwargs == {}
+        assert bounds == {}
 
 
 @pytest.mark.parametrize("time_first", [False, True])
