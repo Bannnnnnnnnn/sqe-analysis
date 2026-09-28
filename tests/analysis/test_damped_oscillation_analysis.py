@@ -11,6 +11,33 @@ from sqe_analysis.analysis import DampedOscillationAnalysis
 from sqe_analysis.signal_processing import project_complex
 
 
+@pytest.mark.parametrize("phase", [-0.2, 0.125, 0.8])
+@pytest.mark.parametrize("first_time", [0.0, 3.0])
+def test_damped_oscillation_phase_guess(phase, first_time):
+    """Estimate phase in turns relative to time zero."""
+    sample_count = 256
+    time_step = 0.25
+
+    # Use exactly seven periods over the DFT window.
+    frequency = 7 / (sample_count * time_step)
+    time = first_time + np.arange(sample_count) * time_step
+
+    data = xr.DataArray(
+        0.2 + 0.8 * np.cos(2 * np.pi * (frequency * time + phase)),
+        coords={"time": time},
+    )
+
+    guess = DampedOscillationAnalysis.guess(data, coords="time")
+
+    assert guess is not None
+    assert guess["f"].item() == pytest.approx(
+        frequency, rel=1e-12, abs=0
+    )
+
+    # Phases differing by an integer number of turns are equivalent.
+    phase_error = (guess["phi"].item() - phase + 0.5) % 1.0 - 0.5
+    assert phase_error == pytest.approx(0.0, abs=1e-10)
+
 @pytest.mark.parametrize("automatic_f", [False, True])
 @pytest.mark.parametrize("time_unit, time_scale", [("s", 1.0), ("us", 1e6)])
 def test_damped_oscillation_analysis_basic(time_unit, time_scale, automatic_f):

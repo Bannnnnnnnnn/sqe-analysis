@@ -136,7 +136,13 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         baseline = y.mean(coords)
         # divide by envelope mean to account for the reduced amplitude due to the decay
         amplitude = 2 * abs(peak) / (x.size * np.exp(-x / tau).mean())
-        phase = 2 * np.pi * np.arctan2(peak.imag, peak.real) # multiply by 2pi to get turns
+        # FFT phase is relative to the first sample at t0, where the model phase
+        # is f*t0 + phi (in turns). Convert the FFT phase from radians to turns,
+        # then subtract f*t0.
+        phase = (
+            np.arctan2(peak.imag, peak.real) / (2 * np.pi)
+            - peak_freq * x.isel({dim: 0}, drop=True)
+        )
 
         return {
             "a": amplitude,
