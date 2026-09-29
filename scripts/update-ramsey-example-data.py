@@ -47,6 +47,7 @@ DESCRIPTION = (
     "One qubit. Uniformly spaced idle times."
 )
 
+EXECUTION_ID = "20260915-022"
 DATASETS = {
     "good_snr": {
         "task_id": "409a5b2b-b7e5-455d-952c-858845584e63",
@@ -88,7 +89,7 @@ DATASETS = {
 def main():
     data_dir = Path(__file__).resolve().parents[1] / "src/sqe_analysis/example_data"
     for qualifier, metadata in DATASETS.items():
-        label = metadata["task_id"].replace("-", "")
+        label = EXECUTION_ID.replace("-", "")
         path = data_dir / f"ramsey-{qualifier}-RX4_QD{label}.nc"
         with xr.open_dataset(path, engine="h5netcdf") as original:
             original.load()
@@ -98,7 +99,7 @@ def main():
             quality_notes=metadata["quality_notes"],
             source=(
                 "RIKEN, SQERT XLD4, chip FY2023 2nd 64Q No3 (1, 0), "
-                f"QDash task {metadata['task_id']}; {metadata['original_file']}."
+                f"QDash execution {EXECUTION_ID}, task {metadata['task_id']}; {metadata['original_file']}."
             ),
         )
         if "expected_fit_result" in metadata:

@@ -53,7 +53,7 @@ def test_damped_oscillation_guess_nonuniform():
 def test_damped_oscillation_analysis_ramsey_good_snr():
     """Fit real Ramsey data with both zero and nonzero starting times."""
     ds, dim, units = open_test_dataset(
-        "ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63",
+        "ramsey-good_snr-RX4_QD20260915022",
         dim="idle_time",
     )
     assert units == "ns"
@@ -95,7 +95,7 @@ def test_damped_oscillation_analysis_ramsey_good_snr():
 def test_damped_oscillation_analysis_ramsey_cut_off(first_sample):
     """Fit a short observation window using the default optimizer settings."""
     ds, dim, units = open_test_dataset(
-        "ramsey-good_snr_cut_off-RX4_QD856d58d5e07a437b892500800c76133d",
+        "ramsey-good_snr_cut_off-RX4_QD20260915022",
         dim="idle_time",
     )
     assert units == "ns"
@@ -123,11 +123,11 @@ def test_damped_oscillation_analysis_ramsey_cut_off(first_sample):
 def test_damped_oscillation_analysis_ramsey_batch_with_missing_trace():
     """Select FFT peaks per trace without an all-NaN neighbor aborting the fit."""
     good, _, good_units = open_test_dataset(
-        "ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63",
+        "ramsey-good_snr-RX4_QD20260915022",
         dim="idle_time",
     )
     cut_off, _, cut_off_units = open_test_dataset(
-        "ramsey-good_snr_cut_off-RX4_QD856d58d5e07a437b892500800c76133d",
+        "ramsey-good_snr_cut_off-RX4_QD20260915022",
         dim="idle_time",
     )
     assert good_units == cut_off_units == "ns"
@@ -175,7 +175,7 @@ def test_damped_oscillation_analysis_ramsey_batch_with_missing_trace():
 @pytest.mark.parametrize("coordinate_form", ["dataarray", "list", "iterator"])
 def test_damped_oscillation_analysis_real_manual_coordinates(coordinate_form):
     """Preserve real-input manual fitting through the base coordinate API."""
-    ds = open_dataset("ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63")
+    ds = open_dataset("ramsey-good_snr-RX4_QD20260915022")
     data = (project_complex(ds.Q22, dim="idle_time") + 10).assign_attrs(
         dataset_id=ds.source
     )
