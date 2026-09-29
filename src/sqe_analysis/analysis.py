@@ -36,7 +36,7 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         b + a \cdot \exp(-x / \tau) \cdot \cos\left(2\pi (f x + \phi)\right)
 
-    to real-valued data. Complex readout IQ is centered and projected to the
+    to real-valued data. Complex-valued data is centered and projected to the
     real axis with :py:func:`~sqe_analysis.signal_processing.project_complex`.
     For complex input, ``a``, ``b``, and ``phi`` describe the projected signal;
     the projection may reverse its sign. Real-valued input is not preprocessed.
@@ -60,9 +60,9 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         """
         Crude initial guesses for damped oscillation parameters.
 
-        Automatic guesses use a named, increasing, uniformly spaced dimension
-        coordinate. Return ``None`` for unsupported coordinates or fewer than
-        three samples.
+        For the automatic guess, ``coords`` should be a string, and it should be
+        a uniformly spaced dimension coordinate. Returns ``None`` for
+        unsupported coordinates or fewer than three samples.
 
         Partially missing traces need finite manual guesses.
         """
