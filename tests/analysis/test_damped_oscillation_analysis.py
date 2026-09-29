@@ -5,6 +5,7 @@ Tests for DampedOscillationAnalysis
 import numpy as np
 import pytest
 import xarray as xr
+from util import open_test_dataset
 from xarray.testing import assert_allclose
 
 from sqe_analysis.analysis import DampedOscillationAnalysis
@@ -51,9 +52,11 @@ def test_damped_oscillation_guess_nonuniform():
 
 def test_damped_oscillation_analysis_ramsey_good_snr():
     """Fit real Ramsey data with both zero and nonzero starting times."""
-    ds = open_dataset("ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63")
-    dim = "idle_time"
-    assert ds[dim].attrs["units"] == "ns"
+    ds, dim, units = open_test_dataset(
+        "ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63",
+        dim="idle_time",
+    )
+    assert units == "ns"
     data = ds.Q22.assign_attrs(dataset_id=ds.source)
 
     results = []
@@ -73,10 +76,13 @@ def test_damped_oscillation_analysis_ramsey_good_snr():
 
     full, cropped = results
 
-    # Regression references from inspected fits, not experimental ground truth.
-    # With time in ns, frequency is in cycle/ns and tau is in ns.
-    assert full.params.f.item() == pytest.approx(1e-3, rel=0.01, abs=0)
-    assert full.params.tau.item() == pytest.approx(33e3, rel=0.1, abs=0)
+    expected = ds.expected_fit_result["Q22"]
+    assert full.params.f.item() * 1e9 == pytest.approx(
+        expected["ramsey_frequency"], rel=0.01, abs=0
+    )
+    assert full.params.tau.item() * 1e-9 == pytest.approx(
+        expected["t2_star"], rel=0.1, abs=0
+    )
     assert cropped.params.f.item() == pytest.approx(
         full.params.f.item(), rel=1e-3, abs=0
     )
@@ -88,9 +94,11 @@ def test_damped_oscillation_analysis_ramsey_good_snr():
 @pytest.mark.parametrize("first_sample", [0, 3])
 def test_damped_oscillation_analysis_ramsey_cut_off(first_sample):
     """Fit a short observation window using the default optimizer settings."""
-    ds = open_dataset("ramsey-good_snr_cut_off-RX4_QD856d58d5e07a437b892500800c76133d")
-    dim = "idle_time"
-    assert ds[dim].attrs["units"] == "ns"
+    ds, dim, units = open_test_dataset(
+        "ramsey-good_snr_cut_off-RX4_QD856d58d5e07a437b892500800c76133d",
+        dim="idle_time",
+    )
+    assert units == "ns"
     data = ds.Q06.assign_attrs(dataset_id=ds.source)
 
     trace = data.isel({dim: slice(first_sample, None)})
@@ -102,18 +110,28 @@ def test_damped_oscillation_analysis_ramsey_cut_off(first_sample):
     fitted = DampedOscillationAnalysis.func(projected[dim], **result.fit_params)
     residual = fitted - projected
     normalized_rms = np.sqrt((residual**2).mean() / projected.var())
+
     assert normalized_rms.item() < 0.2
 
-    # Regression reference in cycle/ns; the window does not constrain tau well.
-    assert result.params.f.item() == pytest.approx(1.2805e-3, rel=0.01, abs=0)
+    # The short window provides a frequency reference, but no decay-time reference.
+    expected = ds.expected_fit_result["Q06"]
+    assert result.params.f.item() * 1e9 == pytest.approx(
+        expected["ramsey_frequency"], rel=0.01, abs=0
+    )
 
 
 def test_damped_oscillation_analysis_ramsey_batch_with_missing_trace():
     """Select FFT peaks per trace without an all-NaN neighbor aborting the fit."""
-    good = open_dataset("ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63")
-    cut_off = open_dataset(
-        "ramsey-good_snr_cut_off-RX4_QD856d58d5e07a437b892500800c76133d"
+    good, _, good_units = open_test_dataset(
+        "ramsey-good_snr-RX4_QD409a5b2bb7e5455d952c858845584e63",
+        dim="idle_time",
     )
+    cut_off, _, cut_off_units = open_test_dataset(
+        "ramsey-good_snr_cut_off-RX4_QD856d58d5e07a437b892500800c76133d",
+        dim="idle_time",
+    )
+    assert good_units == cut_off_units == "ns"
+
     data = (
         xr.concat(
             [
@@ -134,7 +152,12 @@ def test_damped_oscillation_analysis_ramsey_batch_with_missing_trace():
     assert result.params.sel(trace="missing").to_array().isnull().all()
 
     valid = result.params.sel(trace=["good", "cut_off"])
-    assert valid.f.values.tolist() == pytest.approx([1e-3, 1.2805e-3], rel=0.01, abs=0)
+    expected_frequencies = [
+        good.expected_fit_result["Q22"]["ramsey_frequency"],
+        cut_off.expected_fit_result["Q06"]["ramsey_frequency"],
+    ]
+    assert (valid.f * 1e9).values.tolist() == pytest.approx(
+        expected_frequencies, rel=0.01, abs=0)
 
     projected = result.intermediate_results.preprocessed_data.sel(
         trace=["good", "cut_off"]
