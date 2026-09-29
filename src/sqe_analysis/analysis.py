@@ -84,7 +84,8 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
         spec = simple_dft(y, coords, frequency_dim_name="_f")
         spec = spec.where(spec._f > 0, drop=True)
 
-        # Keep all-NaN traces from aborting peak selection for valid neighbors.
+        # Keep all-NaN traces from aborting peak selection for valid neighbors
+        # by using isel + argmax instead of idxmax.
         peak_idx = abs(spec).argmax("_f", skipna=False)
         # Drop the selected FFT frequency coordinate from the guesses.
         peak = spec.isel(_f=peak_idx).drop_vars("_f")
