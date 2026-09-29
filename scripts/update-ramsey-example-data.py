@@ -79,7 +79,7 @@ DATASETS = {
         "task_id": "940615b9-a5a5-4fb7-9670-938a47e1cd7a",
         "original_file": "CheckRamsey_35_raw_1.nc",
         "quality_notes": (
-            "Large step-like changes and an early transient distort the oscillations."
+            "Large step-like changes and an early transient distort the oscillations. No proper signal to speak of."
         ),
     },
 }
