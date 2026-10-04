@@ -3,7 +3,7 @@ The main API of the library
 
 The analysis classes are ordered alphabetically, for lack of better organization.
 """
-from typing import Any, cast, override
+from typing import cast, override
 
 import numpy as np
 import xarray as xr
@@ -36,13 +36,18 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
         b + a \cdot \exp(-x / \tau) \cdot \cos\left(2\pi (f x + \phi)\right)
 
-    to real-valued data. Complex-valued data is centered and projected to the
-    real axis with :py:func:`~sqe_analysis.signal_processing.project_complex`.
-    For complex input, ``a``, ``b``, and ``phi`` describe the projected signal;
-    the projection may reverse its sign. Real-valued input is not preprocessed.
+    to real-valued data. Input data is centered, and complex-valued data
+    is projected to the real axis with
+    :py:func:`~sqe_analysis.signal_processing.project_complex`.
+    The fitted parameters describe the preprocessed signal;
+    the projection of complex input may reverse its sign.
 
     The decay time ``tau`` has the same units as ``x``, the frequency ``f``
     has the inverse units of ``x``, and the phase ``phi`` is in *turns*.
+
+    Fitting can be unreliable when the time axis has values many orders
+    of magnitude larger than 1. Optimizer options such as ``method`` and
+    ``x_scale`` can be passed through ``curvefit_kwargs`` to :py:meth:`run`.
     """
 
     @classmethod
@@ -115,71 +120,12 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
 
     @classmethod
     @override
-    def run(
-        cls,
-        data: xr.DataArray,
-        coords: CurvefitCoordsType,
-        guess: CurvefitGuessType | None = None,
-        bounds: CurvefitBoundsType | None = None,
-        curvefit_kwargs: dict[str, Any] | None = None,
-    ) -> CurvefitAnalysisResult:
+    def preprocess(cls, data: xr.DataArray, coords: str) -> xr.DataArray:
         """
-        Fit with parameter scaling for frequency and decay time.
-
-        Defaults to ``trf`` with ``x_scale="jac"``. User-supplied optimizer options
-        override these defaults. The default remains ``trf`` even if bounds are removed.
-        Fitting and result construction follow the base class.
+        Project complex-valued data to real axis.
         """
-        options = dict(curvefit_kwargs or {})
-        scipy_kwargs = dict(options.get("kwargs") or {})
-        if scipy_kwargs.get("method") is None:
-            scipy_kwargs["method"] = "trf"
-        if scipy_kwargs["method"] in ("trf", "dogbox"):
-            scipy_kwargs.setdefault("x_scale", "jac")
-        options["kwargs"] = scipy_kwargs
-
-        return super().run(
-            data,
-            coords=coords,
-            guess=guess,
-            bounds=bounds,
-            curvefit_kwargs=options,
-        )
-
-    @classmethod
-    @override
-    def preprocess(
-        cls,
-        data: xr.DataArray,
-        coords: CurvefitCoordsType,
-    ) -> xr.DataArray | None:
-        """
-        Project complex readout IQ to the real axis.
-
-        Args:
-            data: Real-valued data or complex readout IQ.
-            coords: For complex input, the name of a one-dimensional
-                coordinate along which to perform the projection.
-
-        Returns:
-            The projected data, or ``None`` for real-valued input.
-
-        Raises:
-            TypeError: If complex input uses a coordinate specification
-                other than a string.
-            ValueError: If the named coordinate is not one-dimensional.
-        """
-        if not np.iscomplexobj(data):
-            return None
-
-        if not isinstance(coords, str):
-            raise TypeError("Complex data require a named one-dimensional coordinate.")
-
-        coordinate = data[coords]
-        if coordinate.ndim != 1:
-            raise ValueError("Complex data require a named one-dimensional coordinate.")
-
-        return project_complex(data, dim=coordinate.dims[0])
+        proj = project_complex(data, dim=coords)
+        return proj
 
 
 class ExponentialRegressionAnalysis(BaseAnalysis):
