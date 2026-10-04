@@ -21,4 +21,4 @@ def test_all_metadata_valid():
             invalid.append((ds_name, e))
 
     if invalid:
-        raise ValueError(f"Errors validating metadata:\n" + "\n".join(f"{ds_name}: {e}" for ds_name, e in invalid))
+        raise ValueError("Errors validating metadata:\n" + "\n".join(f"{ds_name}: {e}" for ds_name, e in invalid))
