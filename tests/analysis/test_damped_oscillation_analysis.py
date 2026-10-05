@@ -120,6 +120,40 @@ def test_damped_oscillation_analysis_ramsey_cut_off():
     )
 
 
+def test_damped_oscillation_analysis_ramsey_cut_off_with_jac_scaling():
+    """
+    Check that jacobian scaling gives good fit even for the short observation
+    case. This test may be removed if
+    test_damped_oscillation_analysis_ramsey_cut_off no longer xfails.
+    """
+    ds, dim, units = open_test_dataset(
+        "ramsey-good_snr_cut_off-RX4_QD20260915022",
+        dim="idle_time",
+    )
+    assert units == "ns"
+    data = ds.Q06.assign_attrs(dataset_id=ds.source)
+
+    trace = data.isel({dim: slice(3, None)})
+    result = DampedOscillationAnalysis.run(
+        trace, coords=dim, curvefit_kwargs={"kwargs": {"x_scale": "jac"}}
+    )
+
+    assert result.success.item()
+
+    projected = result.intermediate_results.preprocessed_data
+    fitted = DampedOscillationAnalysis.func(projected[dim], **result.fit_params)
+    residual = fitted - projected
+    normalized_rms = np.sqrt((residual**2).mean() / projected.var())
+
+    assert normalized_rms.item() < 0.2
+
+    # The short window provides a frequency reference, but no decay-time reference.
+    expected = ds.expected_fit_result["Q06"]
+    assert result.params.f.item() * 1e9 == pytest.approx(
+        expected["ramsey_frequency"], rel=0.01, abs=0
+    )
+
+
 def test_damped_oscillation_analysis_ramsey_batch_with_missing_trace():
     """Select FFT peaks per trace without an all-NaN neighbor aborting the fit."""
     good, _, good_units = open_test_dataset(
@@ -170,4 +204,3 @@ def test_damped_oscillation_analysis_ramsey_batch_with_missing_trace():
         ((fitted - projected) ** 2).mean("idle_time") / projected.var("idle_time")
     )
     assert (normalized_rms < 0.2).all()
-
