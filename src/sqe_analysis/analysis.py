@@ -45,9 +45,10 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
     The decay time ``tau`` has the same units as ``x``, the frequency ``f``
     has the inverse units of ``x``, and the phase ``phi`` is in *turns*.
 
-    Fitting can be unreliable when the time axis has values many orders
-    of magnitude larger than 1. Optimizer options such as ``method`` and
-    ``x_scale`` can be passed through ``curvefit_kwargs`` to :py:meth:`run`.
+    In the current implementation, fitting can be unreliable when the time axis
+    has values that are many orders of magnitude larger than 1. In this case,
+    you may try, for example, to pass ``curvefit_kwargs={"kwargs": {"x_scale": "jac"}}``
+    to :py:meth:`~sqe_analysis.analysis_base.CurvefitAnalysis.run`.
     """
 
     @classmethod
