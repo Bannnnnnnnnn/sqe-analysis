@@ -48,7 +48,9 @@ class DampedOscillationAnalysis(CurvefitAnalysis):
     In the current implementation, fitting can be unreliable when the time axis
     has values that are many orders of magnitude larger than 1. In this case,
     you may try, for example, to pass ``curvefit_kwargs={"kwargs": {"x_scale": "jac"}}``
-    to :py:meth:`~sqe_analysis.analysis_base.CurvefitAnalysis.run`.
+    to :py:meth:`~sqe_analysis.analysis_base.CurvefitAnalysis.run`. For further
+    information, see `the Xarray curvefit documentation <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.curvefit.html>`_ and
+    `the SciPy curve_fit documentation <https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html>`_.
     """
 
     @classmethod
